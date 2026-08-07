@@ -17,16 +17,11 @@ import { recordHandoffNote } from './handoff-notes.js';
 import { DashboardAuth } from './dashboard-auth.js';
 import { buildConnectionManifest, buildDashboardSnapshot } from './dashboard-projection.js';
 import { BRIDGE_SERVER_PROTOCOL, BRIDGE_STREAM_PROTOCOL, BridgeQueue } from './bridge-queue.js';
+import { resolveServiceToken } from './service-token.js';
 
 const config = validateConfig(loadConfig());
-if (!config.serviceToken) throw new Error('SERVICE_TOKEN is required');
-// 拒绝占位值和弱 token —— 忘了换示例值就启动，等于把钥匙印在说明书上。
-if (/^replace-with/i.test(config.serviceToken)) {
-  throw new Error('SERVICE_TOKEN is still the placeholder from .env.example — generate a real one: openssl rand -hex 32');
-}
-if (config.serviceToken.length < 32) {
-  throw new Error('SERVICE_TOKEN must be at least 32 characters — generate one: openssl rand -hex 32');
-}
+const serviceCredential = await resolveServiceToken(config.serviceToken, config.serviceTokenFile);
+config.serviceToken = serviceCredential.token;
 
 const store = new StateStore(config.statePath, () => newState());
 const model = new ModelClient(config.model);
@@ -656,6 +651,7 @@ const server = createServer(async (request, response) => {
         system: 'xinchao-dynamic-mind',
         mode: config.shadowMode ? 'shadow' : 'active',
         version: SYSTEM_VERSION,
+        serviceCredential: serviceCredential.source,
       });
     }
     if (await oauth.handle(request, response, url)) return;
@@ -893,7 +889,7 @@ const server = createServer(async (request, response) => {
 server.listen(config.port, '0.0.0.0', async () => {
   await store.read();
   if (config.bridge.enabled) await bridgeQueue.init();
-  log('service_started', { port: config.port, shadow: config.shadowMode, modelEnabled: config.model.enabled, barkEnabled: config.bark.enabled, bridgeEnabled: config.bridge.enabled });
+  log('service_started', { port: config.port, shadow: config.shadowMode, modelEnabled: config.model.enabled, barkEnabled: config.bark.enabled, bridgeEnabled: config.bridge.enabled, serviceCredential: serviceCredential.source });
 });
 
 const timer = setInterval(() => runCycle().catch((error) => log('cycle_failed', { message: error.message })), config.settleIntervalMinutes * 60_000);
