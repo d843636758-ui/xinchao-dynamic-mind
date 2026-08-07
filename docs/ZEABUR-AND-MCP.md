@@ -109,7 +109,7 @@ PHOSPHENE_MCP_URL=https://你的-phosphene-地址/mcp
 PHOSPHENE_MCP_TOKEN=phosphene签发给心潮的独立Bearer凭据
 ```
 
-默认只读工具分别是 `get_current_mood`、`get_full_state`、
+默认只读工具分别是 `current_mood`、`get_full_state`、
 `get_desire_state` 与 `get_overview`。如某个部署使用不同名称，可分别用
 `EMOTION_MCP_READ_TOOL`、`EVENTIDE_MCP_READ_TOOL`、
 `DESIRE_MCP_READ_TOOL`、`PHOSPHENE_MCP_READ_TOOL` 覆盖。可以只配置其中一部分；
