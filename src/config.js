@@ -19,6 +19,7 @@ export function loadConfig() {
     port: number('PORT', 18110, 1, 65535),
     serviceToken: process.env.SERVICE_TOKEN ?? '',
     statePath: process.env.STATE_PATH ?? '/app/state/state.json',
+    serviceTokenFile: process.env.SERVICE_TOKEN_FILE ?? '/app/state/.service-token',
     journalPath: process.env.TRANSITION_JOURNAL_PATH ?? '/app/state/transitions.jsonl',
     settleIntervalMinutes: number('SETTLE_INTERVAL_MINUTES', 15, 1, 1440),
     sleepAfterMinutes: number('SLEEP_AFTER_MINUTES', 90, 5, 10080),
