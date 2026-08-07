@@ -92,6 +92,17 @@ docker compose ps
 
 Compose 默认只映射到 `127.0.0.1:18110`。远程使用时请自行配置 HTTPS 反向代理或 Cloudflare Tunnel，不能直接开放裸端口。
 
+### Zeabur
+
+从 GitHub fork 直接部署时，即使没有预先填写 `SERVICE_TOKEN`，服务也会在
+`/app/state/.service-token` 安全生成并保存强随机密钥，不再因缺少变量而反复
+崩溃；显式设置的 `SERVICE_TOKEN` 始终优先。请给 `/app/state` 挂载持久卷，
+再按需要开启远程 MCP/OAuth 与外部记忆。
+
+完整的 Zeabur 变量、OAuth 接入以及与 OB、emotion、Eventide、Desire、
+Phosphene、Garden 和 IO 的连接边界见
+[Zeabur 与现有 MCP 接入](docs/ZEABUR-AND-MCP.md)。
+
 ## 远程 MCP
 
 在 `.env` 中启用：
