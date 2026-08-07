@@ -48,6 +48,7 @@ test('peer sync reads allowlisted tools and reuses its short cache', async (t) =
 test('disabled peer sync performs no network work', async () => {
   const sync = new PeerSync({ enabled: false, ttlSeconds: 60, timeoutMs: 1000, sources: {} });
   assert.deepEqual((await sync.snapshot()).sources, {});
+  assert.deepEqual(sync.status().sources, {});
 });
 
 test('a failed refresh keeps the last successful snapshot and marks it stale', async () => {
@@ -68,4 +69,33 @@ test('a failed refresh keeps the last successful snapshot and marks it stale', a
   assert.equal(second.sources.eventide.stale, true);
   assert.deepEqual(second.sources.eventide.data, first.sources.eventide.data);
   assert.match(second.sources.eventide.error, /temporary outage/);
+});
+
+test('peer sync status exposes health metadata but never URL, token or raw data', async () => {
+  const sync = new PeerSync({
+    enabled: true,
+    ttlSeconds: 60,
+    timeoutMs: 1000,
+    sources: {
+      emotion: {
+        url: 'https://emotion.example.com/mcp',
+        token: 'never-return-this-token',
+        tool: 'current_mood',
+        args: {},
+      },
+    },
+  });
+  sync.cache.set('emotion', {
+    ok: true,
+    stale: false,
+    source: 'emotion',
+    tool: 'current_mood',
+    checkedAt: '2026-08-08T00:00:00.000Z',
+    data: { private: 'never-return-this-state' },
+    digest: 'abc123',
+  });
+  const raw = JSON.stringify(sync.status());
+  assert.match(raw, /current_mood/);
+  assert.match(raw, /abc123/);
+  assert.doesNotMatch(raw, /emotion\.example\.com|never-return-this-token|never-return-this-state/);
 });

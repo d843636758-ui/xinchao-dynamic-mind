@@ -1,4 +1,4 @@
-# 心潮动态心智系统 2.7.0
+# 心潮动态心智系统 2.8.0
 
 ![心潮动态心智系统](docs/cover.png)
 
@@ -102,6 +102,18 @@ Compose 默认只映射到 `127.0.0.1:18110`。远程使用时请自行配置 HT
 完整的 Zeabur 变量、OAuth 接入以及与 OB、emotion、Eventide、Desire、
 Phosphene、Garden 和 IO 的连接边界见
 [Zeabur 与现有 MCP 接入](docs/ZEABUR-AND-MCP.md)。
+
+### 浏览器 Dashboard
+
+启用 Dashboard 后，手机或电脑可直接打开：
+
+```text
+https://你的心潮域名/dashboard
+```
+
+页面包含独立口令登录、心潮十二维、运行状态、念头数量、梦境元数据、兄弟
+MCP 只读同步状态、脱敏时间线与多端连接清单。登录口令只用于换取 HttpOnly
+Cookie，不写入 localStorage；默认不展示思绪、梦境、便签正文或任何凭据。
 
 ## 远程 MCP
 

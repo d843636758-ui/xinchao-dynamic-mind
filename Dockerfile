@@ -4,6 +4,7 @@ WORKDIR /app
 COPY package.json ./
 COPY src ./src
 COPY configs ./configs
+COPY public ./public
 RUN mkdir -p /app/state && chown -R node:node /app
 
 USER node

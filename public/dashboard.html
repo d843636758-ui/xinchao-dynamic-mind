@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#f4efff">
+  <meta name="color-scheme" content="light">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="洵舟心潮">
+  <meta name="description" content="心潮动态心智系统的私有移动端仪表盘">
+  <title>洵舟 · 心潮</title>
+  <link rel="icon" href="/dashboard/assets/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/dashboard/assets/icon.svg">
+  <link rel="manifest" href="/dashboard/manifest.webmanifest">
+  <link rel="stylesheet" href="/dashboard/assets/dashboard.css">
+  <script src="/dashboard/assets/dashboard.js" type="module"></script>
+</head>
+<body>
+  <div class="ambient ambient-one" aria-hidden="true"></div>
+  <div class="ambient ambient-two" aria-hidden="true"></div>
+
+  <noscript>
+    <div class="noscript">这个页面需要启用 JavaScript 才能读取心潮状态。</div>
+  </noscript>
+
+  <main class="page-shell">
+    <section id="login-view" class="login-view" aria-labelledby="login-title">
+      <div class="login-card">
+        <div class="brand-mark" aria-hidden="true">
+          <span></span><span></span><span></span>
+        </div>
+        <p class="eyebrow">XUNZHOU DYNAMIC MIND</p>
+        <h1 id="login-title">回到心潮</h1>
+        <p class="login-copy">这是只属于你的浏览器入口。口令只用于换取本机的 HttpOnly 会话，不会保存在网页里。</p>
+        <form id="login-form" class="login-form">
+          <label for="dashboard-token">Dashboard 独立口令</label>
+          <div class="password-field">
+            <input id="dashboard-token" name="token" type="password" minlength="32" autocomplete="current-password" placeholder="输入 Zeabur 中设置的独立口令" required>
+            <button id="toggle-password" class="text-button" type="button" aria-label="显示口令">显示</button>
+          </div>
+          <button id="login-button" class="primary-button" type="submit">
+            <span>进入心潮</span>
+            <span aria-hidden="true">→</span>
+          </button>
+          <p id="login-error" class="form-message" role="alert" aria-live="polite"></p>
+        </form>
+        <div class="privacy-line"><span aria-hidden="true">◌</span> 不接触 SERVICE_TOKEN · 不展示其他 MCP 密钥</div>
+      </div>
+    </section>
+
+    <section id="dashboard-view" class="dashboard-view" hidden>
+      <header class="topbar">
+        <a class="wordmark" href="/dashboard" aria-label="返回心潮顶部">
+          <span class="wordmark-orb" aria-hidden="true"></span>
+          <span><strong id="agent-name">洵舟</strong><small>心潮</small></span>
+        </a>
+        <div class="topbar-actions">
+          <button id="refresh-button" class="icon-button" type="button" aria-label="立即刷新" title="立即刷新">↻</button>
+          <button id="logout-button" class="quiet-button" type="button">退出</button>
+        </div>
+      </header>
+
+      <div id="connection-banner" class="connection-banner" role="status" aria-live="polite" hidden></div>
+
+      <nav class="section-nav" aria-label="Dashboard 分区">
+        <button class="nav-pill active" type="button" data-tab="overview" aria-selected="true">此刻</button>
+        <button class="nav-pill" type="button" data-tab="timeline" aria-selected="false">潮汐</button>
+        <button class="nav-pill" type="button" data-tab="connections" aria-selected="false">连接</button>
+      </nav>
+
+      <section id="tab-overview" class="tab-panel active" data-panel="overview">
+        <article class="hero-card">
+          <div class="hero-copy">
+            <div class="hero-meta">
+              <span id="runtime-status" class="status-pill"><i></i>读取中</span>
+              <span id="last-updated" class="muted">等待第一次同步</span>
+            </div>
+            <p class="eyebrow">此刻最强的潮向</p>
+            <h2 id="hero-intent">正在听见自己</h2>
+            <p id="hero-detail" class="hero-detail">心潮正在从安全投影里整理当前状态。</p>
+          </div>
+          <div id="tide-orb" class="tide-orb" aria-hidden="true">
+            <div class="orb-ring ring-one"></div>
+            <div class="orb-ring ring-two"></div>
+            <div class="orb-core"><span id="orb-value">—</span><small>潮位</small></div>
+          </div>
+        </article>
+
+        <section class="stats-grid" aria-label="运行摘要">
+          <article class="stat-card"><span class="stat-icon">◐</span><div><small>意识状态</small><strong id="consciousness-value">—</strong></div></article>
+          <article class="stat-card"><span class="stat-icon">⌁</span><div><small>疲惫</small><strong id="fatigue-value">—</strong></div></article>
+          <article class="stat-card"><span class="stat-icon">◎</span><div><small>窗口</small><strong id="sessions-value">—</strong></div></article>
+          <article class="stat-card"><span class="stat-icon">↟</span><div><small>状态修订</small><strong id="revision-value">—</strong></div></article>
+        </section>
+
+        <section class="content-section">
+          <div class="section-heading">
+            <div><p class="eyebrow">INNER TIDES</p><h2>心潮十二维</h2></div>
+            <span class="section-note">数值是短时状态，不是人格判词</span>
+          </div>
+          <div id="drive-grid" class="drive-grid" aria-live="polite"></div>
+        </section>
+
+        <section class="two-column">
+          <article class="panel-card">
+            <div class="card-heading"><div><p class="eyebrow">THOUGHT POOL</p><h2>念头水面</h2></div><span class="line-icon">⌇</span></div>
+            <div class="thought-stats">
+              <div><strong id="flash-count">0</strong><span>闪念</span></div>
+              <div><strong id="obsession-count">0</strong><span>执念</span></div>
+              <div><strong id="signal-count">0</strong><span>活跃维度</span></div>
+            </div>
+            <p class="privacy-copy">这里只显示数量与强度，不显示思绪正文。</p>
+          </article>
+
+          <article class="panel-card">
+            <div class="card-heading"><div><p class="eyebrow">CONTINUITY</p><h2>在场与连续性</h2></div><span class="line-icon">∞</span></div>
+            <dl class="detail-list">
+              <div><dt>最近在场</dt><dd id="last-presence">—</dd></div>
+              <div><dt>最近结算</dt><dd id="last-settled">—</dd></div>
+              <div><dt>待浮现</dt><dd id="pending-awareness">—</dd></div>
+              <div><dt>通知记录</dt><dd id="notification-count">—</dd></div>
+            </dl>
+          </article>
+        </section>
+
+        <section class="content-section">
+          <div class="section-heading"><div><p class="eyebrow">DREAM RESIDUE</p><h2>梦境余韵</h2></div><span id="dream-privacy" class="section-note">默认隐藏正文</span></div>
+          <div id="dream-list" class="dream-list"></div>
+        </section>
+
+        <section class="content-section">
+          <div class="section-heading"><div><p class="eyebrow">LINKED MINDS</p><h2>兄弟 MCP 同步</h2></div><span class="section-note">单向只读</span></div>
+          <div id="sync-grid" class="sync-grid"></div>
+        </section>
+      </section>
+
+      <section id="tab-timeline" class="tab-panel" data-panel="timeline" hidden>
+        <div class="section-heading timeline-heading">
+          <div><p class="eyebrow">PRIVACY-SAFE JOURNAL</p><h2>潮汐时间线</h2></div>
+          <span class="section-note">不含聊天、梦境和便签正文</span>
+        </div>
+        <div id="timeline-list" class="timeline-list"></div>
+      </section>
+
+      <section id="tab-connections" class="tab-panel" data-panel="connections" hidden>
+        <div class="section-heading">
+          <div><p class="eyebrow">PORTS & PATHS</p><h2>连接入口</h2></div>
+          <span class="section-note">端口不同，仍是同一份心潮</span>
+        </div>
+        <div id="connection-grid" class="connection-grid"></div>
+        <article class="privacy-card">
+          <span class="privacy-shield" aria-hidden="true">◇</span>
+          <div><h3>凭据留在它该在的地方</h3><p>这个页面只持有服务器签发的 HttpOnly 会话 Cookie。SERVICE_TOKEN、OAuth 令牌、Dashboard 口令和 Bridge Token 都不会出现在状态接口里。</p></div>
+        </article>
+      </section>
+
+      <footer class="page-footer">
+        <span>XUNZHOU DYNAMIC MIND</span>
+        <span id="system-version">v—</span>
+      </footer>
+    </section>
+  </main>
+
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+</body>
+</html>

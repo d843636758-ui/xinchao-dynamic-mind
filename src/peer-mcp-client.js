@@ -73,7 +73,7 @@ export class PeerMcpClient {
           params: {
             protocolVersion: '2025-06-18',
             capabilities: {},
-            clientInfo: { name: 'xinchao-dynamic-mind', version: '2.7.0' },
+            clientInfo: { name: 'xinchao-dynamic-mind', version: '2.8.0' },
           },
         });
         await this.post({ jsonrpc: '2.0', method: 'notifications/initialized' }, false);
@@ -101,4 +101,3 @@ export class PeerMcpClient {
     throw new Error(`${this.name} MCP read failed after session refresh`);
   }
 }
-

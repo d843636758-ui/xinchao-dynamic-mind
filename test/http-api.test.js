@@ -89,6 +89,22 @@ test('POST /v1/handoff-note stores a bounded idempotent note for HTTP clients', 
   await waitForHealth(baseUrl, child, output);
   const note = 'HTTP 客户端的近期进度';
 
+  const dashboardPage = await fetch(`${baseUrl}/dashboard`);
+  assert.equal(dashboardPage.status, 200);
+  assert.match(dashboardPage.headers.get('content-type'), /text\/html/);
+  assert.match(dashboardPage.headers.get('content-security-policy'), /default-src 'self'/);
+  assert.match(dashboardPage.headers.get('content-security-policy'), /frame-ancestors 'none'/);
+  assert.match(await dashboardPage.text(), /回到心潮/);
+
+  const dashboardScript = await fetch(`${baseUrl}/dashboard/assets/dashboard.js`);
+  assert.equal(dashboardScript.status, 200);
+  assert.match(dashboardScript.headers.get('content-type'), /javascript/);
+  assert.doesNotMatch(await dashboardScript.text(), /localStorage|SERVICE_TOKEN/);
+
+  const dashboardManifest = await fetch(`${baseUrl}/dashboard/manifest.webmanifest`);
+  assert.equal(dashboardManifest.status, 200);
+  assert.equal((await dashboardManifest.json()).start_url, '/dashboard');
+
   const heartbeat = await fetch(`${baseUrl}/v1/heartbeat`, {
     method: 'POST',
     headers: {
@@ -191,6 +207,8 @@ test('POST /v1/handoff-note stores a bounded idempotent note for HTTP clients', 
   assert.equal(snapshot.system, 'xinchao-dynamic-mind');
   assert.equal(snapshot.drives.length, DRIVE_KEYS.length);
   assert.equal(snapshot.capabilities.privateDreamText, false);
+  assert.equal(snapshot.version, '2.8.0');
+  assert.equal(snapshot.peerSync.enabled, false);
   assert.doesNotMatch(JSON.stringify(snapshot), /HTTP 客户端的近期进度/);
 
   const directNumericMutation = await fetch(`${baseUrl}/dashboard/api/interactions`, {
