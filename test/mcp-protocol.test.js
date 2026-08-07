@@ -28,10 +28,16 @@ function handlers() {
       duplicate: false,
       received: note,
     }),
+    sync: async ({ force }) => ({
+      version: 1,
+      enabled: true,
+      generatedAt: '2026-08-08T00:00:00.000Z',
+      sources: { emotion: { ok: true, stale: false, data: { mood: 'warm' }, force } },
+    }),
   };
 }
 
-test('MCP initialize advertises the 2.4.0 tool server', async () => {
+test('MCP initialize advertises the 2.7.0 tool server', async () => {
   const result = await handleMcpMessage({
     jsonrpc: '2.0',
     id: 1,
@@ -41,11 +47,11 @@ test('MCP initialize advertises the 2.4.0 tool server', async () => {
   assert.equal(result.status, 200);
   assert.equal(result.body.result.protocolVersion, '2025-06-18');
   assert.equal(result.body.result.serverInfo.name, 'xinchao-dynamic-mind');
-  assert.equal(result.body.result.serverInfo.version, '2.4.0');
+  assert.equal(result.body.result.serverInfo.version, '2.7.0');
   assert.equal(result.body.result.capabilities.tools.listChanged, false);
 });
 
-test('tools/list exposes context, event and short handoff note tools', async () => {
+test('tools/list exposes cross-client context, read-only peer sync, event and handoff tools', async () => {
   const result = await handleMcpMessage({
     jsonrpc: '2.0',
     id: 2,
@@ -53,21 +59,33 @@ test('tools/list exposes context, event and short handoff note tools', async () 
   }, handlers());
   assert.deepEqual(
     result.body.result.tools.map((tool) => tool.name),
-    ['xinchao_context', 'xinchao_event', 'xinchao_handoff_note'],
+    ['xinchao_context', 'xinchao_sync_status', 'xinchao_event', 'xinchao_handoff_note'],
   );
   assert.equal(result.body.result.tools[0].annotations.readOnlyHint, true);
-  assert.equal(result.body.result.tools[1].annotations.destructiveHint, false);
-  assert.equal(result.body.result.tools[1].annotations.idempotentHint, true);
+  assert.equal(result.body.result.tools[1].annotations.readOnlyHint, true);
+  assert.equal(result.body.result.tools[2].annotations.destructiveHint, false);
+  assert.equal(result.body.result.tools[2].annotations.idempotentHint, true);
   assert.deepEqual(result.body.result.tools[0].inputSchema.required, undefined);
   assert.equal(result.body.result.tools[0].inputSchema.properties.max_tokens.default, 2200);
-  assert.ok(result.body.result.tools[1].inputSchema.required.includes('event_id'));
-  assert.equal(result.body.result.tools[1].inputSchema.required.includes('session_id'), false);
-  assert.ok(result.body.result.tools[1].inputSchema.properties.interaction_type.enum.includes('sharing'));
-  assert.equal(result.body.result.tools[2].annotations.idempotentHint, true);
+  assert.ok(result.body.result.tools[2].inputSchema.required.includes('event_id'));
+  assert.equal(result.body.result.tools[2].inputSchema.required.includes('session_id'), false);
+  assert.ok(result.body.result.tools[2].inputSchema.properties.interaction_type.enum.includes('sharing'));
+  assert.equal(result.body.result.tools[3].annotations.idempotentHint, true);
   assert.deepEqual(
-    result.body.result.tools[2].inputSchema.required,
+    result.body.result.tools[3].inputSchema.required,
     ['event_id', 'note'],
   );
+});
+
+test('xinchao_sync_status refreshes only the read-only peer snapshot', async () => {
+  const result = await handleMcpMessage({
+    jsonrpc: '2.0', id: 20, method: 'tools/call',
+    params: { name: 'xinchao_sync_status', arguments: { refresh: true } },
+  }, handlers());
+  assert.equal(result.body.result.isError, false);
+  assert.equal(result.body.result.structuredContent.sources.emotion.ok, true);
+  assert.equal(result.body.result.structuredContent.sources.emotion.data.mood, 'warm');
+  assert.match(result.body.result.content[0].text, /emotion=ok/);
 });
 
 test('xinchao_context returns injectable text and structured envelope', async () => {

@@ -18,6 +18,7 @@ import { DashboardAuth } from './dashboard-auth.js';
 import { buildConnectionManifest, buildDashboardSnapshot } from './dashboard-projection.js';
 import { BRIDGE_SERVER_PROTOCOL, BRIDGE_STREAM_PROTOCOL, BridgeQueue } from './bridge-queue.js';
 import { resolveServiceToken } from './service-token.js';
+import { PeerSync } from './peer-sync.js';
 
 const config = validateConfig(loadConfig());
 const serviceCredential = await resolveServiceToken(config.serviceToken, config.serviceTokenFile);
@@ -35,10 +36,11 @@ const dashboardAuth = new DashboardAuth({
   secureCookies: config.dashboard.publicBaseUrl.startsWith('https://'),
 });
 const bridgeQueue = new BridgeQueue(config.bridge.statePath, config.bridge);
+const peerSync = new PeerSync(config.peerSync, (event, fields) => log(event, fields));
 const bridgeStreams = new Set();
 await oauth.init();
 let cyclePromise = null;
-const SYSTEM_VERSION = '2.6.0';
+const SYSTEM_VERSION = '2.7.0';
 
 function log(event, fields = {}) {
   console.log(JSON.stringify({ at: new Date().toISOString(), event, ...fields }));
@@ -460,6 +462,7 @@ async function createContextEnvelope({
   const delivery = contextDeliveryState(state, sessionId, mode, now, config.context.handoffOnceHours);
   let ombreText = '';
   let ombreWarning = '';
+  let peerState = null;
   if (
     mode === 'session_start'
     && (!delivery.alreadyDelivered || force)
@@ -473,11 +476,15 @@ async function createContextEnvelope({
       log('context_ombre_read_failed', { message: error.message });
     }
   }
+  if (config.peerSync.enabled && (!delivery.alreadyDelivered || force || mode !== 'session_start')) {
+    peerState = await peerSync.snapshot({ force });
+  }
   const envelope = buildContextEnvelope({
     state,
     sessionId,
     mode,
     ombreText,
+    peerState,
     maxTokens,
     ttlMinutes: config.context.ttlMinutes,
     now,
@@ -652,6 +659,10 @@ const server = createServer(async (request, response) => {
         mode: config.shadowMode ? 'shadow' : 'active',
         version: SYSTEM_VERSION,
         serviceCredential: serviceCredential.source,
+        peerSync: {
+          enabled: config.peerSync.enabled,
+          sources: peerSync.configuredSources(),
+        },
       });
     }
     if (await oauth.handle(request, response, url)) return;
@@ -803,6 +814,7 @@ const server = createServer(async (request, response) => {
           };
         },
         handoffNote: async (note) => saveHandoffNote(note, 'mcp'),
+        sync: async ({ force = false } = {}) => peerSync.snapshot({ force }),
       });
       if (payload?.method === 'initialize' || payload?.method === 'tools/call') {
         log('mcp_request', {
@@ -889,7 +901,7 @@ const server = createServer(async (request, response) => {
 server.listen(config.port, '0.0.0.0', async () => {
   await store.read();
   if (config.bridge.enabled) await bridgeQueue.init();
-  log('service_started', { port: config.port, shadow: config.shadowMode, modelEnabled: config.model.enabled, barkEnabled: config.bark.enabled, bridgeEnabled: config.bridge.enabled, serviceCredential: serviceCredential.source });
+  log('service_started', { port: config.port, shadow: config.shadowMode, modelEnabled: config.model.enabled, barkEnabled: config.bark.enabled, bridgeEnabled: config.bridge.enabled, peerSyncSources: peerSync.configuredSources(), serviceCredential: serviceCredential.source });
 });
 
 const timer = setInterval(() => runCycle().catch((error) => log('cycle_failed', { message: error.message })), config.settleIntervalMinutes * 60_000);

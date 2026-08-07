@@ -57,6 +57,31 @@ export const XINCHAO_TOOLS = [
     },
   },
   {
+    name: 'xinchao_sync_status',
+    title: '读取已连接 MCP 同步状态',
+    description: [
+      '读取心潮从 emotion、Eventide、Desire、Phosphene/任务等现有 MCP 聚合的只读快照。',
+      '现有 MCP 始终是各自数据的唯一来源；本工具不写入、不结算、不修改任务，也不会反向同步。',
+    ].join(''),
+    inputSchema: {
+      type: 'object',
+      properties: {
+        refresh: {
+          type: 'boolean',
+          default: false,
+          description: '忽略短缓存并重新读取已配置的来源；仍然只读。',
+        },
+      },
+      additionalProperties: false,
+    },
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: true,
+    },
+  },
+  {
     name: 'xinchao_event',
     title: '回传心潮窗口事件',
     description: [
@@ -282,6 +307,13 @@ async function callTool(name, args, handlers) {
       result,
     );
   }
+  if (name === 'xinchao_sync_status') {
+    const result = await handlers.sync({ force: Boolean(args.refresh) });
+    const sources = Object.entries(result.sources ?? {})
+      .map(([source, state]) => `${source}=${state.ok ? (state.stale ? 'stale' : 'ok') : 'unavailable'}`)
+      .join(' ');
+    return toolText(`心潮只读同步状态：${sources || '未配置来源'}`, result);
+  }
   if (name === 'xinchao_handoff_note') {
     const result = await handlers.handoffNote(handoffNoteArgs(args, fallbackSessionId));
     const duplicate = result.duplicate ? ' duplicate=true' : '';
@@ -313,10 +345,11 @@ export async function handleMcpMessage(payload, handlers) {
         serverInfo: {
           name: 'xinchao-dynamic-mind',
           title: '心潮动态心智系统',
-          version: '2.4.0',
+          version: '2.7.0',
         },
         instructions: [
           '新窗口开始时调用 xinchao_context；服务端会绑定当前 MCP 连接，无需自行编写 session_id。',
+          'xinchao_sync_status 只读聚合现有 MCP 的来源状态，不会写回、结算或修改任务。',
           '一次实际互动后可调用 xinchao_event 更新窗口短状态；event_id 必须唯一，重试时复用。',
           '需要换窗续接时可调用 xinchao_handoff_note 保存近期进度摘要；不要提交聊天原文或人物基岩。',
           '只有结果明确的真实互动才填写 interaction_type；不要提交聊天正文或欲望数值。',

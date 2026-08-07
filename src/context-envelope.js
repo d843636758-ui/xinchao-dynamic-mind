@@ -165,6 +165,7 @@ export function buildContextEnvelope({
   sessionId,
   mode = 'session_start',
   ombreText = '',
+  peerState = null,
   maxTokens = 2200,
   ttlMinutes = 15,
   now = new Date(),
@@ -221,6 +222,27 @@ export function buildContextEnvelope({
       content: continuity,
     });
   }
+  const linkedSources = Object.entries(peerState?.sources ?? {})
+    .filter(([, source]) => source?.ok)
+    .map(([name, source]) => ({
+      source: name,
+      stale: Boolean(source.stale),
+      checkedAt: source.checkedAt,
+      digest: source.digest,
+      data: source.data,
+    }));
+  if (linkedSources.length) {
+    sections.push({
+      id: 'linked_mcp_state',
+      source: 'peer-mcp-readonly',
+      ttl: 'short',
+      content: linkedSources.map((item) => [
+        `${item.source}${item.stale ? '（缓存，刷新失败）' : ''}:`,
+        JSON.stringify(item.data),
+      ].join('\n')).join('\n'),
+      data: { generatedAt: peerState.generatedAt, sources: linkedSources },
+    });
+  }
   const dreamText = renderDreams(state, generatedAt);
   if (dreamText) {
     sections.push({
@@ -236,6 +258,7 @@ export function buildContextEnvelope({
     handoff_notes: '近期交接便签（非原文）',
     dream_residue: '梦境余韵',
     recent_continuity: '近期连续性（不替代基岩）',
+    linked_mcp_state: '已连接 MCP 的只读同步状态',
   };
   let remaining = tokenBudget;
   const renderedSections = [];

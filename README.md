@@ -1,4 +1,4 @@
-# 心潮动态心智系统 2.4.0
+# 心潮动态心智系统 2.7.0
 
 ![心潮动态心智系统](docs/cover.png)
 
@@ -6,7 +6,7 @@
 
 > 心潮模拟可解释的动态状态，不宣称产生意识、情感或生命。核心状态机可离线运行；模型、长期记忆、OAuth 和通知均为可选适配器。
 
-## 2.4.0 更新重点
+## 能力重点
 
 - **用户互动连接桥服务端**：新增 `/bridge/v1/*` 耐久队列、SSE 通知、一次性投递读取与严格 ACK。
 - **只供用户互动**：只接受用户主动发出的互动、便签和预约；梦境、思念、内部状态与 AI 自主行动不会自动注入窗口。
@@ -111,7 +111,7 @@ Phosphene、Garden 和 IO 的连接边界见
 MCP_ENABLED=true
 OAUTH_ENABLED=true
 OAUTH_PUBLIC_BASE_URL=https://xinchao.example.com
-OAUTH_APPROVAL_TOKEN=至少16位的独立授权口令
+OAUTH_APPROVAL_TOKEN=至少32位的独立授权口令
 ```
 
 远程 MCP 地址：
@@ -127,6 +127,7 @@ https://xinchao.example.com/mcp
 | 工具 | 作用 |
 | --- | --- |
 | `xinchao_context` | 获取当前动态短态和近期连续性；同一窗口首次启动默认只交付一次 |
+| `xinchao_sync_status` | 读取或刷新 emotion、Eventide、Desire、Phosphene/任务的只读聚合状态 |
 | `xinchao_event` | 回传一次明确互动及有界窗口状态；`event_id` 用于幂等 |
 | `xinchao_handoff_note` | 保存限时近期进度摘要，不保存整段聊天原文 |
 
