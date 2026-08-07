@@ -28,6 +28,11 @@ function config(overrides = {}) {
       machineToken: '',
       ...(overrides.bridge || {}),
     },
+    peerSync: {
+      enabled: false,
+      sources: {},
+      ...(overrides.peerSync || {}),
+    },
   };
 }
 
@@ -121,4 +126,17 @@ test('Bridge requires an independent strong machine token', () => {
   sameAsService.serviceToken = shared;
   assert.throws(() => validateConfig(sameAsService), /must be independent/);
   assert.equal(validateConfig(config({ bridge: { enabled: true, machineToken: 'm'.repeat(32) } })).bridge.enabled, true);
+});
+
+test('peer MCP sync requires paired HTTPS URL and token without changing source services', () => {
+  assert.throws(() => validateConfig(config({
+    peerSync: { enabled: true, sources: { emotion: { url: 'https://emotion.example.com/mcp', token: '', tool: 'get_current_mood' } } },
+  })), /must be set together/);
+  assert.throws(() => validateConfig(config({
+    peerSync: { enabled: true, sources: { emotion: { url: 'http://emotion.example.com/mcp', token: 'secret', tool: 'get_current_mood' } } },
+  })), /must use HTTPS/);
+  const value = config({
+    peerSync: { enabled: true, sources: { emotion: { url: 'https://emotion.example.com/mcp', token: 'secret', tool: 'get_current_mood' } } },
+  });
+  assert.equal(validateConfig(value), value);
 });

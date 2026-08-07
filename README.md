@@ -1,4 +1,4 @@
-# 心潮动态心智系统 2.4.0
+# 心潮动态心智系统 2.7.0
 
 ![心潮动态心智系统](docs/cover.png)
 
@@ -6,7 +6,7 @@
 
 > 心潮模拟可解释的动态状态，不宣称产生意识、情感或生命。核心状态机可离线运行；模型、长期记忆、OAuth 和通知均为可选适配器。
 
-## 2.4.0 更新重点
+## 能力重点
 
 - **用户互动连接桥服务端**：新增 `/bridge/v1/*` 耐久队列、SSE 通知、一次性投递读取与严格 ACK。
 - **只供用户互动**：只接受用户主动发出的互动、便签和预约；梦境、思念、内部状态与 AI 自主行动不会自动注入窗口。
@@ -92,6 +92,17 @@ docker compose ps
 
 Compose 默认只映射到 `127.0.0.1:18110`。远程使用时请自行配置 HTTPS 反向代理或 Cloudflare Tunnel，不能直接开放裸端口。
 
+### Zeabur
+
+从 GitHub fork 直接部署时，即使没有预先填写 `SERVICE_TOKEN`，服务也会在
+`/app/state/.service-token` 安全生成并保存强随机密钥，不再因缺少变量而反复
+崩溃；显式设置的 `SERVICE_TOKEN` 始终优先。请给 `/app/state` 挂载持久卷，
+再按需要开启远程 MCP/OAuth 与外部记忆。
+
+完整的 Zeabur 变量、OAuth 接入以及与 OB、emotion、Eventide、Desire、
+Phosphene、Garden 和 IO 的连接边界见
+[Zeabur 与现有 MCP 接入](docs/ZEABUR-AND-MCP.md)。
+
 ## 远程 MCP
 
 在 `.env` 中启用：
@@ -100,7 +111,7 @@ Compose 默认只映射到 `127.0.0.1:18110`。远程使用时请自行配置 HT
 MCP_ENABLED=true
 OAUTH_ENABLED=true
 OAUTH_PUBLIC_BASE_URL=https://xinchao.example.com
-OAUTH_APPROVAL_TOKEN=至少16位的独立授权口令
+OAUTH_APPROVAL_TOKEN=至少32位的独立授权口令
 ```
 
 远程 MCP 地址：
@@ -116,6 +127,7 @@ https://xinchao.example.com/mcp
 | 工具 | 作用 |
 | --- | --- |
 | `xinchao_context` | 获取当前动态短态和近期连续性；同一窗口首次启动默认只交付一次 |
+| `xinchao_sync_status` | 读取或刷新 emotion、Eventide、Desire、Phosphene/任务的只读聚合状态 |
 | `xinchao_event` | 回传一次明确互动及有界窗口状态；`event_id` 用于幂等 |
 | `xinchao_handoff_note` | 保存限时近期进度摘要，不保存整段聊天原文 |
 

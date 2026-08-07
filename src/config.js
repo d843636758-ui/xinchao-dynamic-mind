@@ -19,6 +19,7 @@ export function loadConfig() {
     port: number('PORT', 18110, 1, 65535),
     serviceToken: process.env.SERVICE_TOKEN ?? '',
     statePath: process.env.STATE_PATH ?? '/app/state/state.json',
+    serviceTokenFile: process.env.SERVICE_TOKEN_FILE ?? '/app/state/.service-token',
     journalPath: process.env.TRANSITION_JOURNAL_PATH ?? '/app/state/transitions.jsonl',
     settleIntervalMinutes: number('SETTLE_INTERVAL_MINUTES', 15, 1, 1440),
     sleepAfterMinutes: number('SLEEP_AFTER_MINUTES', 90, 5, 10080),
@@ -55,6 +56,37 @@ export function loadConfig() {
       ombreMaxTokens: number('CONTEXT_OMBRE_MAX_TOKENS', 1600, 200, 3000),
       ttlMinutes: number('CONTEXT_TTL_MINUTES', 15, 1, 180),
       handoffOnceHours: number('CONTEXT_HANDOFF_ONCE_HOURS', 12, 1, 168),
+    },
+    peerSync: {
+      enabled: bool('PEER_SYNC_ENABLED', false),
+      ttlSeconds: number('PEER_SYNC_TTL_SECONDS', 60, 15, 3600),
+      timeoutMs: number('PEER_SYNC_TIMEOUT_MS', 15000, 1000, 120000),
+      sources: {
+        emotion: {
+          url: process.env.EMOTION_MCP_URL ?? '',
+          token: process.env.EMOTION_MCP_TOKEN ?? '',
+          tool: process.env.EMOTION_MCP_READ_TOOL ?? 'get_current_mood',
+          args: {},
+        },
+        eventide: {
+          url: process.env.EVENTIDE_MCP_URL ?? '',
+          token: process.env.EVENTIDE_MCP_TOKEN ?? '',
+          tool: process.env.EVENTIDE_MCP_READ_TOOL ?? 'get_full_state',
+          args: {},
+        },
+        desire: {
+          url: process.env.DESIRE_MCP_URL ?? '',
+          token: process.env.DESIRE_MCP_TOKEN ?? '',
+          tool: process.env.DESIRE_MCP_READ_TOOL ?? 'get_desire_state',
+          args: {},
+        },
+        phosphene: {
+          url: process.env.PHOSPHENE_MCP_URL ?? '',
+          token: process.env.PHOSPHENE_MCP_TOKEN ?? '',
+          tool: process.env.PHOSPHENE_MCP_READ_TOOL ?? 'get_overview',
+          args: {},
+        },
+      },
     },
     mcp: {
       enabled: bool('MCP_ENABLED', false),
@@ -174,6 +206,24 @@ export function validateConfig(config) {
     if (token.length < 32) throw new Error('BRIDGE_MACHINE_TOKEN must contain at least 32 characters when Bridge is enabled');
     if ([config.serviceToken, config.dashboard?.accessToken].filter(Boolean).includes(token)) {
       throw new Error('BRIDGE_MACHINE_TOKEN must be independent from service and dashboard tokens');
+    }
+  }
+  if (config.peerSync?.enabled) {
+    for (const [name, source] of Object.entries(config.peerSync.sources ?? {})) {
+      const url = String(source.url || '').trim();
+      const token = String(source.token || '').trim();
+      if (!url && !token) continue;
+      if (!url || !token) throw new Error(`${name.toUpperCase()}_MCP_URL and ${name.toUpperCase()}_MCP_TOKEN must be set together`);
+      let parsed;
+      try { parsed = new URL(url); }
+      catch { throw new Error(`${name.toUpperCase()}_MCP_URL must be a valid URL`); }
+      const local = ['localhost', '127.0.0.1', '::1'].includes(parsed.hostname);
+      if (parsed.protocol !== 'https:' && !(local && parsed.protocol === 'http:')) {
+        throw new Error(`${name.toUpperCase()}_MCP_URL must use HTTPS outside localhost`);
+      }
+      if (!/^[A-Za-z0-9_.:-]{1,100}$/.test(String(source.tool || ''))) {
+        throw new Error(`${name.toUpperCase()}_MCP_READ_TOOL is invalid`);
+      }
     }
   }
   return config;

@@ -10,9 +10,11 @@ Please report suspected vulnerabilities privately through GitHub Security Adviso
 
 ## Deployment baseline
 
-- Replace the example `SERVICE_TOKEN` before starting the service.
-  The server refuses to start with the placeholder value or any token shorter
-  than 32 characters.
+- Prefer an explicit strong `SERVICE_TOKEN` when direct HTTP clients need to
+  know the bearer value. If it is omitted, the server generates a random
+  64-character token in `SERVICE_TOKEN_FILE`; keep that file under a private
+  persistent volume. Placeholder and short explicit or persisted tokens still
+  fail closed.
 - `MCP_PATH_TOKEN` travels inside the URL path. URLs are commonly recorded by
   reverse proxies, CDN logs and browser history — treat this mode as a
   compatibility fallback for clients that cannot send headers, prefer the

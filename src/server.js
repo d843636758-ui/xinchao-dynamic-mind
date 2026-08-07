@@ -17,16 +17,12 @@ import { recordHandoffNote } from './handoff-notes.js';
 import { DashboardAuth } from './dashboard-auth.js';
 import { buildConnectionManifest, buildDashboardSnapshot } from './dashboard-projection.js';
 import { BRIDGE_SERVER_PROTOCOL, BRIDGE_STREAM_PROTOCOL, BridgeQueue } from './bridge-queue.js';
+import { resolveServiceToken } from './service-token.js';
+import { PeerSync } from './peer-sync.js';
 
 const config = validateConfig(loadConfig());
-if (!config.serviceToken) throw new Error('SERVICE_TOKEN is required');
-// 拒绝占位值和弱 token —— 忘了换示例值就启动，等于把钥匙印在说明书上。
-if (/^replace-with/i.test(config.serviceToken)) {
-  throw new Error('SERVICE_TOKEN is still the placeholder from .env.example — generate a real one: openssl rand -hex 32');
-}
-if (config.serviceToken.length < 32) {
-  throw new Error('SERVICE_TOKEN must be at least 32 characters — generate one: openssl rand -hex 32');
-}
+const serviceCredential = await resolveServiceToken(config.serviceToken, config.serviceTokenFile);
+config.serviceToken = serviceCredential.token;
 
 const store = new StateStore(config.statePath, () => newState());
 const model = new ModelClient(config.model);
@@ -40,10 +36,11 @@ const dashboardAuth = new DashboardAuth({
   secureCookies: config.dashboard.publicBaseUrl.startsWith('https://'),
 });
 const bridgeQueue = new BridgeQueue(config.bridge.statePath, config.bridge);
+const peerSync = new PeerSync(config.peerSync, (event, fields) => log(event, fields));
 const bridgeStreams = new Set();
 await oauth.init();
 let cyclePromise = null;
-const SYSTEM_VERSION = '2.6.0';
+const SYSTEM_VERSION = '2.7.0';
 
 function log(event, fields = {}) {
   console.log(JSON.stringify({ at: new Date().toISOString(), event, ...fields }));
@@ -465,6 +462,7 @@ async function createContextEnvelope({
   const delivery = contextDeliveryState(state, sessionId, mode, now, config.context.handoffOnceHours);
   let ombreText = '';
   let ombreWarning = '';
+  let peerState = null;
   if (
     mode === 'session_start'
     && (!delivery.alreadyDelivered || force)
@@ -478,11 +476,15 @@ async function createContextEnvelope({
       log('context_ombre_read_failed', { message: error.message });
     }
   }
+  if (config.peerSync.enabled && (!delivery.alreadyDelivered || force || mode !== 'session_start')) {
+    peerState = await peerSync.snapshot({ force });
+  }
   const envelope = buildContextEnvelope({
     state,
     sessionId,
     mode,
     ombreText,
+    peerState,
     maxTokens,
     ttlMinutes: config.context.ttlMinutes,
     now,
@@ -656,6 +658,11 @@ const server = createServer(async (request, response) => {
         system: 'xinchao-dynamic-mind',
         mode: config.shadowMode ? 'shadow' : 'active',
         version: SYSTEM_VERSION,
+        serviceCredential: serviceCredential.source,
+        peerSync: {
+          enabled: config.peerSync.enabled,
+          sources: peerSync.configuredSources(),
+        },
       });
     }
     if (await oauth.handle(request, response, url)) return;
@@ -807,6 +814,7 @@ const server = createServer(async (request, response) => {
           };
         },
         handoffNote: async (note) => saveHandoffNote(note, 'mcp'),
+        sync: async ({ force = false } = {}) => peerSync.snapshot({ force }),
       });
       if (payload?.method === 'initialize' || payload?.method === 'tools/call') {
         log('mcp_request', {
@@ -893,7 +901,7 @@ const server = createServer(async (request, response) => {
 server.listen(config.port, '0.0.0.0', async () => {
   await store.read();
   if (config.bridge.enabled) await bridgeQueue.init();
-  log('service_started', { port: config.port, shadow: config.shadowMode, modelEnabled: config.model.enabled, barkEnabled: config.bark.enabled, bridgeEnabled: config.bridge.enabled });
+  log('service_started', { port: config.port, shadow: config.shadowMode, modelEnabled: config.model.enabled, barkEnabled: config.bark.enabled, bridgeEnabled: config.bridge.enabled, peerSyncSources: peerSync.configuredSources(), serviceCredential: serviceCredential.source });
 });
 
 const timer = setInterval(() => runCycle().catch((error) => log('cycle_failed', { message: error.message })), config.settleIntervalMinutes * 60_000);
