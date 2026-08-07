@@ -135,6 +135,7 @@ export function buildDashboardSnapshot(state = {}, config = {}, now = new Date()
       externalMemoryWrite: Boolean(config.ombre?.writeEnabled),
       notifications: Boolean(config.bark?.enabled),
       wakeBridgeProtocol: Boolean(config.bridge?.enabled),
+      peerSync: Boolean(config.peerSync?.enabled),
       privateDreamText: Boolean(config.dashboard?.includePrivateText),
     },
   };

@@ -34,6 +34,29 @@ export class PeerSync {
     return [...this.clients.keys()];
   }
 
+  status() {
+    return {
+      enabled: Boolean(this.config.enabled),
+      ttlSeconds: this.config.ttlSeconds,
+      sources: Object.fromEntries([...this.clients.entries()].map(([name, client]) => {
+        const cached = this.cache.get(name);
+        const state = !cached
+          ? 'waiting'
+          : cached.ok
+            ? (cached.stale ? 'stale' : 'ok')
+            : 'unavailable';
+        return [name, {
+          configured: true,
+          state,
+          tool: client.tool,
+          checkedAt: cached?.checkedAt ?? null,
+          digest: cached?.digest ?? null,
+          ...(cached?.error ? { error: String(cached.error).slice(0, 160) } : {}),
+        }];
+      })),
+    };
+  }
+
   async readSource(name, client, force, now) {
     const previous = this.cache.get(name);
     if (!force && previous?.ok && Date.parse(previous.checkedAt) + this.config.ttlSeconds * 1000 > now.getTime()) {
@@ -77,4 +100,3 @@ export class PeerSync {
     return this.inflight;
   }
 }
-

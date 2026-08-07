@@ -1,5 +1,6 @@
 import { createServer } from 'node:http';
 import { createHash, randomUUID, timingSafeEqual } from 'node:crypto';
+import { readFile } from 'node:fs/promises';
 import { loadConfig, validateConfig } from './config.js';
 import { INTERACTION_TYPES, applyDriveFeedback, applyOmbreHeartbeat, barkAllowed, breathDreamContext, contactIdleAllowed, daytimeEmergenceAllowed, dreamAllowed, newState, pickIntent, proactiveBarkAllowed, recordBark, recordDaytimeEmergence, recordDream, scheduleDaytimeEmergence, settleAndApplyConversationEvent, settleState, topDrives } from './engine.js';
 import { buildInteractionBridgeMessage } from './interaction-messages.js';
@@ -40,7 +41,18 @@ const peerSync = new PeerSync(config.peerSync, (event, fields) => log(event, fie
 const bridgeStreams = new Set();
 await oauth.init();
 let cyclePromise = null;
-const SYSTEM_VERSION = '2.7.0';
+const SYSTEM_VERSION = '2.8.0';
+const DASHBOARD_ASSETS = new Map(await Promise.all([
+  ['/dashboard', 'dashboard.html', 'text/html; charset=utf-8'],
+  ['/dashboard/', 'dashboard.html', 'text/html; charset=utf-8'],
+  ['/dashboard/assets/dashboard.css', 'dashboard.css', 'text/css; charset=utf-8'],
+  ['/dashboard/assets/dashboard.js', 'dashboard.js', 'text/javascript; charset=utf-8'],
+  ['/dashboard/assets/icon.svg', 'dashboard-icon.svg', 'image/svg+xml'],
+  ['/dashboard/manifest.webmanifest', 'manifest.webmanifest', 'application/manifest+json; charset=utf-8'],
+].map(async ([route, file, contentType]) => [
+  route,
+  { content: await readFile(new URL(`../public/${file}`, import.meta.url)), contentType },
+])));
 
 function log(event, fields = {}) {
   console.log(JSON.stringify({ at: new Date().toISOString(), event, ...fields }));
@@ -411,6 +423,33 @@ function send(response, status, value, extraHeaders = {}) {
   response.end(JSON.stringify(value));
 }
 
+function sendDashboardAsset(response, asset) {
+  const contentSecurityPolicy = [
+    "default-src 'self'",
+    "script-src 'self'",
+    "style-src 'self'",
+    "img-src 'self' data:",
+    "connect-src 'self'",
+    "font-src 'none'",
+    "object-src 'none'",
+    "base-uri 'none'",
+    "form-action 'self'",
+    "frame-ancestors 'none'",
+    "manifest-src 'self'",
+  ].join('; ');
+  response.writeHead(200, {
+    'Content-Type': asset.contentType,
+    'Content-Length': asset.content.length,
+    'Cache-Control': 'no-store',
+    'Content-Security-Policy': contentSecurityPolicy,
+    'Referrer-Policy': 'no-referrer',
+    'X-Content-Type-Options': 'nosniff',
+    'X-Frame-Options': 'DENY',
+    'Permissions-Policy': 'camera=(), microphone=(), geolocation=()',
+  });
+  response.end(asset.content);
+}
+
 function dashboardTimelineOptions(url) {
   const types = url.searchParams.getAll('type')
     .flatMap((value) => value.split(','))
@@ -425,7 +464,12 @@ function dashboardTimelineOptions(url) {
 
 async function dashboardPayload(pathname, url) {
   if (pathname.endsWith('/snapshot')) {
-    return buildDashboardSnapshot(await store.read(), config, new Date());
+    if (config.peerSync.enabled) await peerSync.snapshot();
+    return {
+      ...buildDashboardSnapshot(await store.read(), config, new Date()),
+      version: SYSTEM_VERSION,
+      peerSync: peerSync.status(),
+    };
   }
   if (pathname.endsWith('/timeline')) {
     return {
@@ -664,6 +708,11 @@ const server = createServer(async (request, response) => {
           sources: peerSync.configuredSources(),
         },
       });
+    }
+    const dashboardAsset = DASHBOARD_ASSETS.get(url.pathname);
+    if (request.method === 'GET' && dashboardAsset) {
+      if (!config.dashboard.enabled) return send(response, 404, { error: 'not found' });
+      return sendDashboardAsset(response, dashboardAsset);
     }
     if (await oauth.handle(request, response, url)) return;
     if (url.pathname.startsWith('/bridge/v1')) {
