@@ -65,7 +65,7 @@ export function loadConfig() {
         emotion: {
           url: process.env.EMOTION_MCP_URL ?? '',
           token: process.env.EMOTION_MCP_TOKEN ?? '',
-          tool: process.env.EMOTION_MCP_READ_TOOL ?? 'get_current_mood',
+          tool: process.env.EMOTION_MCP_READ_TOOL ?? 'current_mood',
           args: {},
         },
         eventide: {
