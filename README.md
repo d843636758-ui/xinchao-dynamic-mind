@@ -1,4 +1,4 @@
-# 心潮动态心智系统 2.8.0
+# 心潮动态心智系统 2.9.0
 
 ![心潮动态心智系统](docs/cover.png)
 
@@ -99,8 +99,7 @@ Compose 默认只映射到 `127.0.0.1:18110`。远程使用时请自行配置 HT
 崩溃；显式设置的 `SERVICE_TOKEN` 始终优先。请给 `/app/state` 挂载持久卷，
 再按需要开启远程 MCP/OAuth 与外部记忆。
 
-完整的 Zeabur 变量、OAuth 接入以及与 OB、emotion、Eventide、Desire、
-Phosphene、Garden 和 IO 的连接边界见
+完整的 Zeabur 变量、OAuth 接入以及与 OB、Garden 和不同 AI 入口的连接边界见
 [Zeabur 与现有 MCP 接入](docs/ZEABUR-AND-MCP.md)。
 
 ### 浏览器 Dashboard
@@ -111,8 +110,8 @@ Phosphene、Garden 和 IO 的连接边界见
 https://你的心潮域名/dashboard
 ```
 
-页面包含独立口令登录、心潮十二维、运行状态、念头数量、梦境元数据、兄弟
-MCP 只读同步状态、脱敏时间线与多端连接清单。登录口令只用于换取 HttpOnly
+页面包含独立口令登录、心潮十二维、运行状态、念头数量、梦境元数据、
+脱敏时间线与多端连接清单。登录口令只用于换取 HttpOnly
 Cookie，不写入 localStorage；默认不展示思绪、梦境、便签正文或任何凭据。
 
 ## 远程 MCP
@@ -139,11 +138,15 @@ https://xinchao.example.com/mcp
 | 工具 | 作用 |
 | --- | --- |
 | `xinchao_context` | 获取当前动态短态和近期连续性；同一窗口首次启动默认只交付一次 |
-| `xinchao_sync_status` | 读取或刷新 emotion、Eventide、Desire、Phosphene/任务的只读聚合状态 |
+| `xinchao_get_state` | 读取心潮自身的意识、欲望、意图、念头信号与梦境数量 |
+| `xinchao_get_dreams` | 读取心潮自身保存的近期梦境全文、余韵与觉察 |
 | `xinchao_event` | 回传一次明确互动及有界窗口状态；`event_id` 用于幂等 |
 | `xinchao_handoff_note` | 保存限时近期进度摘要，不保存整段聊天原文 |
 
 `session_id` 是可选覆盖值。正常情况下服务端会使用 MCP 连接自带的稳定窗口 ID。
+所有工具都显式声明 OAuth 权限、结构化输出和读写提示，便于 ChatGPT、Claude、
+Codex 等客户端发现并正确区分读取与操作。心潮不再聚合 emotion、Eventide、
+Desire 或 Phosphene；这些服务继续由各入口按原来的方式独立连接。
 
 ## HTTP API
 

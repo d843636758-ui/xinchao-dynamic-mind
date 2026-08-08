@@ -39,13 +39,6 @@ test('session-start envelope carries recent continuity without pretending to be 
     state,
     sessionId: 'window-a',
     ombreText: '最近发生的事：昨天把误存的技术记忆软删除了。',
-    peerState: {
-      generatedAt: now.toISOString(),
-      sources: {
-        emotion: { ok: true, stale: false, checkedAt: now.toISOString(), digest: 'mood1', data: { mood: 'warm' } },
-        eventide: { ok: false, error: 'unavailable' },
-      },
-    },
     maxTokens: 300,
     now,
   });
@@ -55,15 +48,12 @@ test('session-start envelope carries recent continuity without pretending to be 
     'dynamic_state',
     'handoff_notes',
     'recent_continuity',
-    'linked_mcp_state',
     'dream_residue',
   ]);
   assert.match(envelope.additionalContext, /窗口短态/);
   assert.match(envelope.additionalContext, /近期交接便签（非原文）/);
   assert.match(envelope.additionalContext, /近期连续性（不替代基岩）/);
   assert.match(envelope.additionalContext, /最近发生的事/);
-  assert.match(envelope.additionalContext, /已连接 MCP 的只读同步状态/);
-  assert.match(envelope.additionalContext, /warm/);
   assert.ok(envelope.estimatedTokens <= 300);
 });
 

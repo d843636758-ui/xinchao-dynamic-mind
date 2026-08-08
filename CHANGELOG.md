@@ -2,6 +2,13 @@
 
 本项目遵循语义化版本。除非特别说明，所有外部模型、长期记忆、OAuth 与通知能力均保持默认关闭。
 
+## 2.9.0 — 2026-08-08
+
+- 移除 emotion、Eventide、Desire 与 Phosphene 的兄弟 MCP 只读聚合；心潮重新只提供自己的数据与操作，不修改任何来源服务。
+- 新增 `xinchao_get_state` 与 `xinchao_get_dreams`，后者通过已认证 MCP 明确返回近期梦境全文；没有梦时返回 `available=false`。
+- 为全部心潮工具补齐 OAuth `securitySchemes`、结构化 `outputSchema`、读写提示和调用状态元数据，修复 ChatGPT 连接后无法发现可用操作的问题。
+- 保留 `xinchao_event` 与 `xinchao_handoff_note` 作为有界、幂等的心潮写入口。
+
 ## 2.8.0 — 2026-08-08
 
 - 内置移动端优先的 `/dashboard` 页面，提供独立口令登录、自动刷新、心潮十二维、梦境元数据、脱敏时间线与连接清单。

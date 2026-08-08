@@ -12,6 +12,91 @@ const INTERACTION_TYPES = new Set([
   'reconciliation',
 ]);
 
+const OAUTH_SECURITY_SCHEMES = [{ type: 'oauth2', scopes: ['xinchao'] }];
+
+function toolMeta(invoking, invoked) {
+  return {
+    securitySchemes: OAUTH_SECURITY_SCHEMES,
+    'openai/toolInvocation/invoking': invoking,
+    'openai/toolInvocation/invoked': invoked,
+  };
+}
+
+const CONTEXT_OUTPUT_SCHEMA = {
+  type: 'object',
+  properties: {
+    version: { type: 'integer' },
+    sessionId: { type: 'string' },
+    mode: { type: 'string' },
+    delivered: { type: 'boolean' },
+    alreadyDelivered: { type: 'boolean' },
+    additionalContext: { type: 'string' },
+    sections: { type: 'array', items: { type: 'object', additionalProperties: true } },
+    estimatedTokens: { type: 'integer' },
+    digest: { type: 'string' },
+  },
+  required: ['version', 'sessionId', 'mode', 'delivered', 'additionalContext', 'sections', 'estimatedTokens', 'digest'],
+  additionalProperties: true,
+};
+
+const STATE_OUTPUT_SCHEMA = {
+  type: 'object',
+  properties: {
+    version: { type: 'integer' },
+    generatedAt: { type: 'string' },
+    revision: { type: 'integer' },
+    runtime: { type: 'object', additionalProperties: true },
+    intent: { type: 'object', additionalProperties: true },
+    drives: { type: 'array', items: { type: 'object', additionalProperties: true } },
+    topDrives: { type: 'array', items: { type: 'object', additionalProperties: true } },
+    thoughts: { type: 'object', additionalProperties: true },
+    dreamCount: { type: 'integer' },
+  },
+  required: ['version', 'generatedAt', 'revision', 'runtime', 'intent', 'drives', 'topDrives', 'thoughts', 'dreamCount'],
+  additionalProperties: false,
+};
+
+const DREAM_OUTPUT_SCHEMA = {
+  type: 'object',
+  properties: {
+    version: { type: 'integer' },
+    generatedAt: { type: 'string' },
+    available: { type: 'boolean' },
+    count: { type: 'integer' },
+    total: { type: 'integer' },
+    dreams: { type: 'array', items: { type: 'object', additionalProperties: true } },
+  },
+  required: ['version', 'generatedAt', 'available', 'count', 'total', 'dreams'],
+  additionalProperties: false,
+};
+
+const EVENT_OUTPUT_SCHEMA = {
+  type: 'object',
+  properties: {
+    revision: { type: 'integer' },
+    consciousness: { type: 'string' },
+    pendingAwareness: { type: 'boolean' },
+    sessionId: { type: ['string', 'null'] },
+    sessionCreated: { type: 'boolean' },
+    duplicate: { type: 'boolean' },
+    interaction: { type: ['object', 'null'], additionalProperties: true },
+    settledHours: { type: 'number' },
+  },
+  required: ['revision', 'consciousness', 'sessionId', 'sessionCreated', 'duplicate'],
+  additionalProperties: true,
+};
+
+const HANDOFF_OUTPUT_SCHEMA = {
+  type: 'object',
+  properties: {
+    revision: { type: 'integer' },
+    duplicate: { type: 'boolean' },
+    noteLength: { type: 'integer' },
+  },
+  required: ['revision', 'duplicate', 'noteLength'],
+  additionalProperties: false,
+};
+
 export const XINCHAO_TOOLS = [
   {
     name: 'xinchao_context',
@@ -49,6 +134,9 @@ export const XINCHAO_TOOLS = [
       },
       additionalProperties: false,
     },
+    outputSchema: CONTEXT_OUTPUT_SCHEMA,
+    securitySchemes: OAUTH_SECURITY_SCHEMES,
+    _meta: toolMeta('正在读取心潮上下文…', '已读取心潮上下文'),
     annotations: {
       readOnlyHint: true,
       destructiveHint: false,
@@ -57,28 +145,49 @@ export const XINCHAO_TOOLS = [
     },
   },
   {
-    name: 'xinchao_sync_status',
-    title: '读取已连接 MCP 同步状态',
-    description: [
-      '读取心潮从 emotion、Eventide、Desire、Phosphene/任务等现有 MCP 聚合的只读快照。',
-      '现有 MCP 始终是各自数据的唯一来源；本工具不写入、不结算、不修改任务，也不会反向同步。',
-    ].join(''),
+    name: 'xinchao_get_state',
+    title: '读取心潮当前状态',
+    description: '读取心潮自己的意识、欲望、意图、思想信号与梦境数量；只访问心潮数据，不连接其他 MCP。',
     inputSchema: {
       type: 'object',
-      properties: {
-        refresh: {
-          type: 'boolean',
-          default: false,
-          description: '忽略短缓存并重新读取已配置的来源；仍然只读。',
-        },
-      },
+      properties: {},
       additionalProperties: false,
     },
+    outputSchema: STATE_OUTPUT_SCHEMA,
+    securitySchemes: OAUTH_SECURITY_SCHEMES,
+    _meta: toolMeta('正在读取心潮状态…', '已读取心潮状态'),
     annotations: {
       readOnlyHint: true,
       destructiveHint: false,
       idempotentHint: true,
-      openWorldHint: true,
+      openWorldHint: false,
+    },
+  },
+  {
+    name: 'xinchao_get_dreams',
+    title: '读取心潮近期梦境',
+    description: '读取心潮自己保存的近期梦境全文、余韵与觉察；没有梦境时明确返回 available=false。',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        limit: {
+          type: 'integer',
+          minimum: 1,
+          maximum: 20,
+          default: 5,
+          description: '返回最近的梦境数量。',
+        },
+      },
+      additionalProperties: false,
+    },
+    outputSchema: DREAM_OUTPUT_SCHEMA,
+    securitySchemes: OAUTH_SECURITY_SCHEMES,
+    _meta: toolMeta('正在读取心潮梦境…', '已读取心潮梦境'),
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
     },
   },
   {
@@ -144,6 +253,9 @@ export const XINCHAO_TOOLS = [
       required: ['event_id'],
       additionalProperties: false,
     },
+    outputSchema: EVENT_OUTPUT_SCHEMA,
+    securitySchemes: OAUTH_SECURITY_SCHEMES,
+    _meta: toolMeta('正在更新心潮状态…', '已更新心潮状态'),
     annotations: {
       readOnlyHint: false,
       destructiveHint: false,
@@ -189,6 +301,9 @@ export const XINCHAO_TOOLS = [
       required: ['event_id', 'note'],
       additionalProperties: false,
     },
+    outputSchema: HANDOFF_OUTPUT_SCHEMA,
+    securitySchemes: OAUTH_SECURITY_SCHEMES,
+    _meta: toolMeta('正在保存心潮交接…', '已保存心潮交接'),
     annotations: {
       readOnlyHint: false,
       destructiveHint: false,
@@ -296,6 +411,21 @@ async function callTool(name, args, handlers) {
       : '本窗口的心潮交接已经完成，本次不重复注入。';
     return toolText(text, envelope);
   }
+  if (name === 'xinchao_get_state') {
+    const result = await handlers.state();
+    return toolText(
+      `心潮当前状态：revision=${result.revision} consciousness=${result.runtime?.consciousness ?? 'unknown'} dreams=${result.dreamCount}`,
+      result,
+    );
+  }
+  if (name === 'xinchao_get_dreams') {
+    const limit = Math.max(1, Math.min(20, numberOr(args.limit, 5)));
+    const result = await handlers.dreams({ limit });
+    const summary = result.available
+      ? `心潮近期梦境：返回 ${result.count} 条，共 ${result.total} 条。`
+      : '心潮目前还没有保存的梦境。';
+    return toolText(summary, result);
+  }
   if (name === 'xinchao_event') {
     const result = await handlers.event(eventArgs(args, fallbackSessionId));
     const interaction = result.interaction?.type
@@ -306,13 +436,6 @@ async function callTool(name, args, handlers) {
       `心潮窗口事件已接收：session=${result.sessionId} revision=${result.revision}${interaction}${duplicate}`,
       result,
     );
-  }
-  if (name === 'xinchao_sync_status') {
-    const result = await handlers.sync({ force: Boolean(args.refresh) });
-    const sources = Object.entries(result.sources ?? {})
-      .map(([source, state]) => `${source}=${state.ok ? (state.stale ? 'stale' : 'ok') : 'unavailable'}`)
-      .join(' ');
-    return toolText(`心潮只读同步状态：${sources || '未配置来源'}`, result);
   }
   if (name === 'xinchao_handoff_note') {
     const result = await handlers.handoffNote(handoffNoteArgs(args, fallbackSessionId));
@@ -345,11 +468,11 @@ export async function handleMcpMessage(payload, handlers) {
         serverInfo: {
           name: 'xinchao-dynamic-mind',
           title: '心潮动态心智系统',
-          version: '2.8.0',
+          version: '2.9.0',
         },
         instructions: [
           '新窗口开始时调用 xinchao_context；服务端会绑定当前 MCP 连接，无需自行编写 session_id。',
-          'xinchao_sync_status 只读聚合现有 MCP 的来源状态，不会写回、结算或修改任务。',
+          '用 xinchao_get_state 读取心潮自身状态，用 xinchao_get_dreams 读取心潮自己保存的近期梦境。',
           '一次实际互动后可调用 xinchao_event 更新窗口短状态；event_id 必须唯一，重试时复用。',
           '需要换窗续接时可调用 xinchao_handoff_note 保存近期进度摘要；不要提交聊天原文或人物基岩。',
           '只有结果明确的真实互动才填写 interaction_type；不要提交聊天正文或欲望数值。',

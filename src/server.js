@@ -16,10 +16,9 @@ import { handleMcpMessage } from './mcp-protocol.js';
 import { OAuthProvider } from './oauth-provider.js';
 import { recordHandoffNote } from './handoff-notes.js';
 import { DashboardAuth } from './dashboard-auth.js';
-import { buildConnectionManifest, buildDashboardSnapshot } from './dashboard-projection.js';
+import { buildConnectionManifest, buildDashboardSnapshot, projectDreams } from './dashboard-projection.js';
 import { BRIDGE_SERVER_PROTOCOL, BRIDGE_STREAM_PROTOCOL, BridgeQueue } from './bridge-queue.js';
 import { resolveServiceToken } from './service-token.js';
-import { PeerSync } from './peer-sync.js';
 
 const config = validateConfig(loadConfig());
 const serviceCredential = await resolveServiceToken(config.serviceToken, config.serviceTokenFile);
@@ -37,11 +36,10 @@ const dashboardAuth = new DashboardAuth({
   secureCookies: config.dashboard.publicBaseUrl.startsWith('https://'),
 });
 const bridgeQueue = new BridgeQueue(config.bridge.statePath, config.bridge);
-const peerSync = new PeerSync(config.peerSync, (event, fields) => log(event, fields));
 const bridgeStreams = new Set();
 await oauth.init();
 let cyclePromise = null;
-const SYSTEM_VERSION = '2.8.0';
+const SYSTEM_VERSION = '2.9.0';
 const DASHBOARD_ASSETS = new Map(await Promise.all([
   ['/dashboard', 'dashboard.html', 'text/html; charset=utf-8'],
   ['/dashboard/', 'dashboard.html', 'text/html; charset=utf-8'],
@@ -464,11 +462,9 @@ function dashboardTimelineOptions(url) {
 
 async function dashboardPayload(pathname, url) {
   if (pathname.endsWith('/snapshot')) {
-    if (config.peerSync.enabled) await peerSync.snapshot();
     return {
       ...buildDashboardSnapshot(await store.read(), config, new Date()),
       version: SYSTEM_VERSION,
-      peerSync: peerSync.status(),
     };
   }
   if (pathname.endsWith('/timeline')) {
@@ -506,7 +502,6 @@ async function createContextEnvelope({
   const delivery = contextDeliveryState(state, sessionId, mode, now, config.context.handoffOnceHours);
   let ombreText = '';
   let ombreWarning = '';
-  let peerState = null;
   if (
     mode === 'session_start'
     && (!delivery.alreadyDelivered || force)
@@ -520,15 +515,11 @@ async function createContextEnvelope({
       log('context_ombre_read_failed', { message: error.message });
     }
   }
-  if (config.peerSync.enabled && (!delivery.alreadyDelivered || force || mode !== 'session_start')) {
-    peerState = await peerSync.snapshot({ force });
-  }
   const envelope = buildContextEnvelope({
     state,
     sessionId,
     mode,
     ombreText,
-    peerState,
     maxTokens,
     ttlMinutes: config.context.ttlMinutes,
     now,
@@ -703,10 +694,6 @@ const server = createServer(async (request, response) => {
         mode: config.shadowMode ? 'shadow' : 'active',
         version: SYSTEM_VERSION,
         serviceCredential: serviceCredential.source,
-        peerSync: {
-          enabled: config.peerSync.enabled,
-          sources: peerSync.configuredSources(),
-        },
       });
     }
     const dashboardAsset = DASHBOARD_ASSETS.get(url.pathname);
@@ -850,11 +837,42 @@ const server = createServer(async (request, response) => {
           if (!config.context.enabled) throw new Error('心潮 Context Envelope 当前未启用');
           return createContextEnvelope(args);
         },
+        state: async () => {
+          const now = new Date();
+          const current = await store.read();
+          const snapshot = buildDashboardSnapshot(current, config, now);
+          return {
+            version: 1,
+            generatedAt: snapshot.generatedAt,
+            revision: snapshot.revision,
+            runtime: snapshot.runtime,
+            intent: pickIntent(current) ?? {},
+            drives: snapshot.drives,
+            topDrives: snapshot.topDrives,
+            thoughts: snapshot.thoughts,
+            dreamCount: Array.isArray(current.recentDreams) ? current.recentDreams.length : 0,
+          };
+        },
+        dreams: async ({ limit }) => {
+          const now = new Date();
+          const current = await store.read();
+          const total = Array.isArray(current.recentDreams) ? current.recentDreams.length : 0;
+          const dreams = projectDreams(current, true, limit);
+          return {
+            version: 1,
+            generatedAt: now.toISOString(),
+            available: dreams.length > 0,
+            count: dreams.length,
+            total,
+            dreams,
+          };
+        },
         event: async (event) => {
           const result = await recordConversationEvent(event, 'mcp');
           return {
             revision: result.revision,
             consciousness: result.consciousness,
+            pendingAwareness: result.pendingAwareness,
             sessionId: result.sessionId,
             sessionCreated: result.sessionCreated,
             duplicate: result.duplicate,
@@ -863,7 +881,6 @@ const server = createServer(async (request, response) => {
           };
         },
         handoffNote: async (note) => saveHandoffNote(note, 'mcp'),
-        sync: async ({ force = false } = {}) => peerSync.snapshot({ force }),
       });
       if (payload?.method === 'initialize' || payload?.method === 'tools/call') {
         log('mcp_request', {
@@ -950,7 +967,7 @@ const server = createServer(async (request, response) => {
 server.listen(config.port, '0.0.0.0', async () => {
   await store.read();
   if (config.bridge.enabled) await bridgeQueue.init();
-  log('service_started', { port: config.port, shadow: config.shadowMode, modelEnabled: config.model.enabled, barkEnabled: config.bark.enabled, bridgeEnabled: config.bridge.enabled, peerSyncSources: peerSync.configuredSources(), serviceCredential: serviceCredential.source });
+  log('service_started', { port: config.port, shadow: config.shadowMode, modelEnabled: config.model.enabled, barkEnabled: config.bark.enabled, bridgeEnabled: config.bridge.enabled, serviceCredential: serviceCredential.source });
 });
 
 const timer = setInterval(() => runCycle().catch((error) => log('cycle_failed', { message: error.message })), config.settleIntervalMinutes * 60_000);

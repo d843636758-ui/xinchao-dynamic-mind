@@ -55,25 +55,23 @@ https://你的心潮域名/mcp
 `SERVICE_TOKEN`、Dashboard 密钥和任何 Bridge Token 相互独立。
 
 Codex、Claude Code 和本地 IDE 可对同一 `/mcp` 地址使用显式
-`SERVICE_TOKEN` Bearer 鉴权。所有入口共享同一台心潮的全局状态与只读同步快照，
+`SERVICE_TOKEN` Bearer 鉴权。所有入口共享同一台心潮的全局状态，
 但每条 MCP 连接保留独立的短窗口 session，避免一个端口重复消费另一个端口的
 一次性交接。端口只是入口，不会创建另一套身份或另一份心潮。
 
-先保持 `SHADOW_MODE=true`。确认 `xinchao_context`、`xinchao_sync_status`、`xinchao_event` 和
-`xinchao_handoff_note` 可用且没有重复写入后，再单独决定是否启用主动能力。
+先保持 `SHADOW_MODE=true`。确认 `xinchao_context`、`xinchao_get_state`、
+`xinchao_get_dreams`、`xinchao_event` 和 `xinchao_handoff_note` 可用且没有重复
+写入后，再单独决定是否启用主动能力。
 
 ## 3. 与现有 MCP 的连接边界
 
-心潮可以额外作为这些服务的**只读聚合层**。现有服务仍是各字段唯一来源，
-无需修改它们的代码；心潮只调用下面列出的读取工具并缓存快照，不调用写入、
-结算、任务变更或任意工具名，因此不会循环回写或重复结算：
+心潮的远程 MCP 只提供心潮自己的状态、梦境、互动与交接工具，不再连接或聚合
+emotion、Eventide、Desire、Phosphene/任务。它们继续作为独立 MCP 由各入口直接
+使用，原代码、凭据、写入顺序和结算规则都不需要改。Garden 也继续保持独立，
+心潮念头不能自动触发游戏动作。
 
-| 服务 | 推荐连接方式 | 初始权限 |
-| --- | --- | --- |
-| Ombre Brain (OB) | 心潮内置 Ombre 客户端可以直接读取；也继续保留 Agent 直连 | 只读 |
-| emotion / Eventide | 心潮服务端只读拉取；Agent 原有写入顺序不变 | 只读 |
-| Desire / Phosphene | 心潮服务端只读拉取意图与任务总览 | 只读 |
-| Garden | 保持独立游戏与 Wake Bridge；心潮念头不能自动触发游戏动作 | 不自动写 |
+OB 是唯一保留的可选内部适配器，只用于给 `xinchao_context` 提供精简的近期连续
+性；它不复制 OB 数据，也不会取代 Agent 原有的 OB 直连和写入流程。
 
 OB 的安全起步配置：
 
@@ -90,40 +88,15 @@ CONTEXT_OMBRE_ENABLED=true
 `OMBRE_WRITE_ENABLED` 改为 `true`；不要复用 Dashboard 密码、OAuth 授权口令
 或其他 MCP 的 Token。
 
-启用兄弟 MCP 只读同步时，在 Zeabur 设置：
-
-```env
-PEER_SYNC_ENABLED=true
-PEER_SYNC_TTL_SECONDS=60
-
-EMOTION_MCP_URL=https://你的-emotion-地址/mcp
-EMOTION_MCP_TOKEN=emotion签发给心潮的独立Bearer凭据
-
-EVENTIDE_MCP_URL=https://你的-eventide-地址/mcp
-EVENTIDE_MCP_TOKEN=eventide签发给心潮的独立Bearer凭据
-
-DESIRE_MCP_URL=https://你的-desire-地址/mcp
-DESIRE_MCP_TOKEN=desire签发给心潮的独立Bearer凭据
-
-PHOSPHENE_MCP_URL=https://你的-phosphene-地址/mcp
-PHOSPHENE_MCP_TOKEN=phosphene签发给心潮的独立Bearer凭据
-```
-
-默认只读工具分别是 `current_mood`、`get_full_state`、
-`get_desire_state` 与 `get_overview`。如某个部署使用不同名称，可分别用
-`EMOTION_MCP_READ_TOOL`、`EVENTIDE_MCP_READ_TOOL`、
-`DESIRE_MCP_READ_TOOL`、`PHOSPHENE_MCP_READ_TOOL` 覆盖。可以只配置其中一部分；
-URL 与 Token 必须成对设置。上游暂时不可用时，心潮保留最后一次成功快照并明确
-标为 `stale`，不会伪装成新数据。
-
 OB 不复制进新的聚合存储：它继续通过既有 Ombre adapter 向
 `xinchao_context` 提供精简近期连续性，从而避免同一记忆出现两个所有者。
 
 ## 4. IO 编排建议
 
-- 窗口开始：调用 `xinchao_context` 即可同时获得心潮短态、OB 精简连续性以及
-  已配置的 emotion/Eventide/Desire/Phosphene 只读快照；也可以继续直接读取各
-  MCP，以各来源返回为最终准据。
+- 窗口开始：调用 `xinchao_context` 获得心潮短态与可选 OB 精简连续性；其他
+  MCP 继续分别直连，以各来源返回为最终准据。
+- 需要检查心潮时：调用 `xinchao_get_state`；需要看梦时调用
+  `xinchao_get_dreams`。没有梦会明确返回空结果，不会伪装成读取失败。
 - 明确互动结束：保留既有 `OB → emotion → Eventide` 顺序；随后用稳定、唯一的
   `event_id` 调用一次 `xinchao_event`。
 - 网络重试必须复用同一个 `event_id`，不重复结算已经成功的前置步骤。
