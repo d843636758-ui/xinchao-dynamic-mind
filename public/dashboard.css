@@ -412,6 +412,12 @@ button { color: inherit; }
 .dream-card { min-height: 168px; padding: 21px; display: flex; flex-direction: column; justify-content: space-between; border: 1px solid var(--line); border-radius: var(--radius-md); background: linear-gradient(145deg, rgba(255,255,255,.8), rgba(238,232,251,.7)); }
 .dream-card h3 { margin: 0; font-size: 14px; }
 .dream-card p { margin: 11px 0; color: var(--ink-soft); font-size: 12px; line-height: 1.6; }
+.dream-card.private-text { min-height: 0; }
+.dream-copy-list { margin: 15px 0 18px; display: grid; gap: 11px; }
+.dream-copy { padding: 12px 13px; border: 1px solid rgba(126, 103, 162, .11); border-radius: 14px; background: rgba(255,255,255,.46); }
+.dream-copy-label { display: block; color: var(--lavender-deep); font-size: 10px; font-weight: 700; letter-spacing: .08em; }
+.dream-card .dream-copy-text { margin: 6px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.dream-card .dream-copy-empty { margin: 0; color: var(--muted); }
 .dream-meta { display: flex; flex-wrap: wrap; gap: 6px; }
 .micro-tag { padding: 5px 8px; border-radius: 999px; color: #746389; background: rgba(255,255,255,.64); font-size: 9px; }
 
