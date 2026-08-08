@@ -207,7 +207,7 @@ test('POST /v1/handoff-note stores a bounded idempotent note for HTTP clients', 
   assert.equal(snapshot.system, 'xinchao-dynamic-mind');
   assert.equal(snapshot.drives.length, DRIVE_KEYS.length);
   assert.equal(snapshot.capabilities.privateDreamText, false);
-  assert.equal(snapshot.version, '2.9.0');
+  assert.equal(snapshot.version, '2.9.1');
   assert.doesNotMatch(JSON.stringify(snapshot), /HTTP 客户端的近期进度/);
 
   const directNumericMutation = await fetch(`${baseUrl}/dashboard/api/interactions`, {

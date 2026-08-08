@@ -61,6 +61,7 @@ export function projectDreams(state, includePrivateText, limit = 12) {
       id: compact(dream?.id, 120) || null,
       createdAt: validDate(dream?.createdAt),
       source: compact(dream?.source, 60) || 'unknown',
+      model: compact(dream?.model, 120) || null,
       hasDream: Boolean(compact(dream?.dream)),
       hasResidue: Boolean(compact(dream?.residue)),
       hasSummary: Boolean(summary),

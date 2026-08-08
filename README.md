@@ -1,4 +1,4 @@
-# 心潮动态心智系统 2.9.0
+# 心潮动态心智系统 2.9.1
 
 ![心潮动态心智系统](docs/cover.png)
 
@@ -101,6 +101,13 @@ Compose 默认只映射到 `127.0.0.1:18110`。远程使用时请自行配置 HT
 
 完整的 Zeabur 变量、OAuth 接入以及与 OB、Garden 和不同 AI 入口的连接边界见
 [Zeabur 与现有 MCP 接入](docs/ZEABUR-AND-MCP.md)。
+
+### OpenRouter 自主梦境
+
+心潮可以在进入睡眠并到达梦境结算周期后，调用 OpenRouter 生成属于
+当前动态状态的梦。这是心潮服务端自己的模型适配器，不依赖 ChatGPT
+窗口在线，也不会改动 OB 或其他 MCP。完整的 Zeabur 变量见
+[OpenRouter 造梦配置](docs/ZEABUR-AND-MCP.md#5-openrouter-自主造梦)。
 
 ### 浏览器 Dashboard
 

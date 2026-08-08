@@ -6,6 +6,13 @@ import { validateConfig } from '../src/config.js';
 function config(overrides = {}) {
   return {
     serviceToken: 'service-secret',
+    model: {
+      enabled: false,
+      apiKey: '',
+      name: 'local-model',
+      baseUrl: 'http://127.0.0.1:11434/v1',
+      ...(overrides.model || {}),
+    },
     ombre: {
       url: '',
       token: '',
@@ -68,6 +75,39 @@ test('authenticated external memory configuration is accepted', () => {
       url: 'https://memory.example.com/mcp',
       token: 'server-side-bearer',
       readEnabled: true,
+    },
+  });
+  assert.equal(validateConfig(value), value);
+});
+
+test('enabled model requires credentials, a model slug and a secure remote URL', () => {
+  assert.throws(
+    () => validateConfig(config({ model: { enabled: true } })),
+    /MODEL_API_KEY is required/,
+  );
+  assert.throws(
+    () => validateConfig(config({
+      model: { enabled: true, apiKey: 'secret', name: '' },
+    })),
+    /MODEL_NAME is required/,
+  );
+  assert.throws(
+    () => validateConfig(config({
+      model: {
+        enabled: true,
+        apiKey: 'secret',
+        name: 'provider/model',
+        baseUrl: 'http://models.example.com/v1',
+      },
+    })),
+    /must use HTTPS/,
+  );
+  const value = config({
+    model: {
+      enabled: true,
+      apiKey: 'secret',
+      name: 'provider/model',
+      baseUrl: 'https://openrouter.ai/api/v1',
     },
   });
   assert.equal(validateConfig(value), value);
