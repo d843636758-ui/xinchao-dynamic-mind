@@ -219,13 +219,33 @@ function renderDreams(snapshot) {
   const privateText = Boolean(snapshot.capabilities?.privateDreamText);
   $('#dream-privacy').textContent = privateText ? '已启用私密正文' : '默认隐藏正文';
   const cards = (snapshot.dreams ?? []).map((dream, index) => {
-    const card = node('article', 'dream-card');
+    const card = node('article', `dream-card${privateText ? ' private-text' : ''}`);
     const heading = node('div');
     heading.append(node('h3', '', `梦境 ${String(index + 1).padStart(2, '0')} · ${formatDate(dream.createdAt)}`));
-    const summary = privateText
-      ? (dream.summary || dream.awareness || dream.residue || dream.dream || '这场梦没有留下可读文字。')
-      : `留下${[dream.hasDream ? '梦境' : '', dream.hasResidue ? '余韵' : '', dream.hasAwareness ? '醒后意识' : ''].filter(Boolean).join('、') || '一段安静的记录'}。`;
-    heading.append(node('p', '', summary));
+    if (privateText) {
+      const copy = node('div', 'dream-copy-list');
+      const fields = [
+        ['梦境正文', dream.dream],
+        ['梦境余韵', dream.residue],
+        ['醒后意识', dream.awareness],
+      ].filter(([, value]) => String(value ?? '').trim());
+      if (fields.length) {
+        for (const [label, value] of fields) {
+          const section = node('section', 'dream-copy');
+          section.append(
+            node('span', 'dream-copy-label', label),
+            node('p', 'dream-copy-text', String(value).trim()),
+          );
+          copy.append(section);
+        }
+      } else {
+        copy.append(node('p', 'dream-copy-empty', '这场梦没有留下可读文字。'));
+      }
+      heading.append(copy);
+    } else {
+      const summary = `留下${[dream.hasDream ? '梦境' : '', dream.hasResidue ? '余韵' : '', dream.hasAwareness ? '醒后意识' : ''].filter(Boolean).join('、') || '一段安静的记录'}。`;
+      heading.append(node('p', '', summary));
+    }
     const meta = node('div', 'dream-meta');
     const sourceLabel = dream.source === 'model'
       ? '模型梦境'
