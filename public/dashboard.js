@@ -236,29 +236,6 @@ function renderDreams(snapshot) {
   replaceChildren($('#dream-list'), cards.length ? cards : [node('div', 'empty-state', '还没有最近的梦境记录。')]);
 }
 
-function renderPeerSync(snapshot) {
-  const sync = snapshot.peerSync ?? { enabled: false, sources: {} };
-  const sources = Object.entries(sync.sources ?? {});
-  if (!sync.enabled || !sources.length) {
-    replaceChildren($('#sync-grid'), [node('div', 'empty-state', '兄弟 MCP 只读同步尚未启用；页面本身仍可正常查看心潮。')]);
-    return;
-  }
-  const cards = sources.map(([name, source]) => {
-    const card = node('article', 'sync-card');
-    const header = node('div', 'sync-card-head');
-    header.append(node('h3', '', name));
-    const state = source.state || 'waiting';
-    const labels = { ok: '正常', stale: '旧快照', unavailable: '异常', waiting: '等待首次同步' };
-    header.append(node('span', `sync-state ${state}`, labels[state] || state));
-    const detail = source.checkedAt
-      ? `读取工具 ${source.tool} · ${formatDate(source.checkedAt)}`
-      : `读取工具 ${source.tool} · 尚未取得快照`;
-    card.append(header, node('p', '', detail));
-    return card;
-  });
-  replaceChildren($('#sync-grid'), cards);
-}
-
 function describeTimeline(item) {
   const fragments = [];
   const delta = item.delta ?? {};
@@ -317,7 +294,6 @@ async function refreshData(showFeedback = true) {
     renderRuntime(snapshot);
     renderDrives(snapshot);
     renderDreams(snapshot);
-    renderPeerSync(snapshot);
     renderTimeline(timeline);
     renderConnections(manifest);
     connectionBanner.hidden = true;

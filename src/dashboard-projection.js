@@ -49,7 +49,7 @@ function projectedThoughts(state) {
   };
 }
 
-function projectedDreams(state, includePrivateText, limit = 12) {
+export function projectDreams(state, includePrivateText, limit = 12) {
   const dreams = Array.isArray(state?.recentDreams) ? state.recentDreams : [];
   return dreams.slice(-Math.max(1, Math.min(30, Number(limit) || 12))).reverse().map((dream) => {
     const summary = compact(dream?.summary || dream?.awareness, 360) || null;
@@ -117,7 +117,7 @@ export function buildDashboardSnapshot(state = {}, config = {}, now = new Date()
     drives,
     topDrives,
     thoughts: projectedThoughts(state),
-    dreams: projectedDreams(
+    dreams: projectDreams(
       state,
       Boolean(config.dashboard?.includePrivateText),
       config.dashboard?.dreamLimit,
@@ -135,7 +135,6 @@ export function buildDashboardSnapshot(state = {}, config = {}, now = new Date()
       externalMemoryWrite: Boolean(config.ombre?.writeEnabled),
       notifications: Boolean(config.bark?.enabled),
       wakeBridgeProtocol: Boolean(config.bridge?.enabled),
-      peerSync: Boolean(config.peerSync?.enabled),
       privateDreamText: Boolean(config.dashboard?.includePrivateText),
     },
   };

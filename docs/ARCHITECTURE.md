@@ -63,7 +63,6 @@ Context Envelope 负责传输短期状态，不负责保存或压缩稳定核心
 
 - `ModelClient`：任意 OpenAI-compatible Chat Completions API。
 - `OmbreClient`：可选的 Ombre-compatible Streamable HTTP Memory MCP。
-- `PeerSync`：可选的兄弟 MCP 只读聚合器；来源服务保留所有权，失败时只使用明确标记的旧快照。
 - `BarkClient`：可选手机通知。
 - `OAuthProvider`：远程 MCP 的 OAuth 2.1、PKCE 与动态客户端注册。
 - `DashboardAuth`：独立访问口令换取同源 HttpOnly 只读会话。

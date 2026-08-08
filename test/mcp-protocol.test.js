@@ -8,6 +8,7 @@ function handlers() {
     context: async (args) => ({
       version: 1,
       delivered: true,
+      alreadyDelivered: false,
       additionalContext: `[心潮动态状态]\nsession=${args.sessionId}`,
       sessionId: args.sessionId,
       mode: args.mode,
@@ -16,28 +17,46 @@ function handlers() {
       sections: [],
       digest: 'abc',
     }),
+    state: async () => ({
+      version: 1,
+      generatedAt: '2026-08-08T00:00:00.000Z',
+      revision: 7,
+      runtime: { consciousness: 'awake' },
+      intent: { key: 'curiosity', value: 0.4 },
+      drives: [],
+      topDrives: [],
+      thoughts: { flashCount: 0, obsessionCount: 0, signals: [] },
+      dreamCount: 1,
+    }),
+    dreams: async ({ limit }) => ({
+      version: 1,
+      generatedAt: '2026-08-08T00:00:00.000Z',
+      available: true,
+      count: 1,
+      total: 1,
+      dreams: [{ id: 'dream-1', dream: '潮水退去后，石阶仍在发光。', limit }],
+    }),
     event: async (event) => ({
       revision: 8,
       consciousness: 'awake',
+      pendingAwareness: false,
       sessionId: event.sessionId,
       sessionCreated: true,
+      duplicate: false,
+      interaction: null,
+      settledHours: 0,
       received: event,
     }),
     handoffNote: async (note) => ({
       revision: 9,
       duplicate: false,
+      noteLength: note.note.length,
       received: note,
-    }),
-    sync: async ({ force }) => ({
-      version: 1,
-      enabled: true,
-      generatedAt: '2026-08-08T00:00:00.000Z',
-      sources: { emotion: { ok: true, stale: false, data: { mood: 'warm' }, force } },
     }),
   };
 }
 
-test('MCP initialize advertises the 2.8.0 tool server', async () => {
+test('MCP initialize advertises the 2.9.0 standalone tool server', async () => {
   const result = await handleMcpMessage({
     jsonrpc: '2.0',
     id: 1,
@@ -47,11 +66,11 @@ test('MCP initialize advertises the 2.8.0 tool server', async () => {
   assert.equal(result.status, 200);
   assert.equal(result.body.result.protocolVersion, '2025-06-18');
   assert.equal(result.body.result.serverInfo.name, 'xinchao-dynamic-mind');
-  assert.equal(result.body.result.serverInfo.version, '2.8.0');
+  assert.equal(result.body.result.serverInfo.version, '2.9.0');
   assert.equal(result.body.result.capabilities.tools.listChanged, false);
 });
 
-test('tools/list exposes cross-client context, read-only peer sync, event and handoff tools', async () => {
+test('tools/list exposes Xinchao-only read and write tools with ChatGPT metadata', async () => {
   const result = await handleMcpMessage({
     jsonrpc: '2.0',
     id: 2,
@@ -59,33 +78,50 @@ test('tools/list exposes cross-client context, read-only peer sync, event and ha
   }, handlers());
   assert.deepEqual(
     result.body.result.tools.map((tool) => tool.name),
-    ['xinchao_context', 'xinchao_sync_status', 'xinchao_event', 'xinchao_handoff_note'],
+    ['xinchao_context', 'xinchao_get_state', 'xinchao_get_dreams', 'xinchao_event', 'xinchao_handoff_note'],
   );
+  for (const tool of result.body.result.tools) {
+    assert.ok(tool.outputSchema);
+    assert.deepEqual(tool.securitySchemes, [{ type: 'oauth2', scopes: ['xinchao'] }]);
+    assert.deepEqual(tool._meta.securitySchemes, tool.securitySchemes);
+  }
   assert.equal(result.body.result.tools[0].annotations.readOnlyHint, true);
   assert.equal(result.body.result.tools[1].annotations.readOnlyHint, true);
-  assert.equal(result.body.result.tools[2].annotations.destructiveHint, false);
-  assert.equal(result.body.result.tools[2].annotations.idempotentHint, true);
+  assert.equal(result.body.result.tools[2].annotations.readOnlyHint, true);
+  assert.equal(result.body.result.tools[3].annotations.destructiveHint, false);
+  assert.equal(result.body.result.tools[3].annotations.idempotentHint, true);
   assert.deepEqual(result.body.result.tools[0].inputSchema.required, undefined);
   assert.equal(result.body.result.tools[0].inputSchema.properties.max_tokens.default, 2200);
-  assert.ok(result.body.result.tools[2].inputSchema.required.includes('event_id'));
-  assert.equal(result.body.result.tools[2].inputSchema.required.includes('session_id'), false);
-  assert.ok(result.body.result.tools[2].inputSchema.properties.interaction_type.enum.includes('sharing'));
-  assert.equal(result.body.result.tools[3].annotations.idempotentHint, true);
+  assert.ok(result.body.result.tools[3].inputSchema.required.includes('event_id'));
+  assert.equal(result.body.result.tools[3].inputSchema.required.includes('session_id'), false);
+  assert.ok(result.body.result.tools[3].inputSchema.properties.interaction_type.enum.includes('sharing'));
+  assert.equal(result.body.result.tools[4].annotations.idempotentHint, true);
   assert.deepEqual(
-    result.body.result.tools[3].inputSchema.required,
+    result.body.result.tools[4].inputSchema.required,
     ['event_id', 'note'],
   );
 });
 
-test('xinchao_sync_status refreshes only the read-only peer snapshot', async () => {
+test('xinchao_get_state reads Xinchao state without peer aggregation', async () => {
   const result = await handleMcpMessage({
     jsonrpc: '2.0', id: 20, method: 'tools/call',
-    params: { name: 'xinchao_sync_status', arguments: { refresh: true } },
+    params: { name: 'xinchao_get_state', arguments: {} },
   }, handlers());
   assert.equal(result.body.result.isError, false);
-  assert.equal(result.body.result.structuredContent.sources.emotion.ok, true);
-  assert.equal(result.body.result.structuredContent.sources.emotion.data.mood, 'warm');
-  assert.match(result.body.result.content[0].text, /emotion=ok/);
+  assert.equal(result.body.result.structuredContent.runtime.consciousness, 'awake');
+  assert.equal(result.body.result.structuredContent.dreamCount, 1);
+  assert.equal('sources' in result.body.result.structuredContent, false);
+});
+
+test('xinchao_get_dreams returns authenticated private dream text', async () => {
+  const result = await handleMcpMessage({
+    jsonrpc: '2.0', id: 21, method: 'tools/call',
+    params: { name: 'xinchao_get_dreams', arguments: { limit: 3 } },
+  }, handlers());
+  assert.equal(result.body.result.isError, false);
+  assert.equal(result.body.result.structuredContent.available, true);
+  assert.equal(result.body.result.structuredContent.dreams[0].dream, '潮水退去后，石阶仍在发光。');
+  assert.equal(result.body.result.structuredContent.dreams[0].limit, 3);
 });
 
 test('xinchao_context returns injectable text and structured envelope', async () => {
