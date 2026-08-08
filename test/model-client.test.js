@@ -74,3 +74,79 @@ test('a thought never claims the recalled memory just happened', async () => {
   assert.match(userPrompt(sent[0]), /不代表刚刚发生/);
   assert.match(userPrompt(sent[0]), /不虚构现实中没有发生的事/);
 });
+
+test('OpenRouter requests include attribution headers without provider-specific thinking fields', async () => {
+  const calls = [];
+  const client = new ModelClient({
+    enabled: true,
+    apiKey: 'openrouter-secret',
+    baseUrl: 'https://openrouter.ai/api/v1',
+    name: 'provider/model',
+    httpReferer: 'https://xinchao.example.com',
+    appTitle: '洵舟 · 心潮',
+    maxInputChars: 10000,
+    maxOutputTokens: 400,
+    timeoutMs: 1000,
+    agentName: '洵舟',
+    notificationRecipient: '宝宝',
+  }, {
+    fetchImpl: async (url, options) => {
+      calls.push({ url, options });
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          choices: [{ message: { content: '{"dream":"月光","residue":"微亮","awareness":"是梦","lucidity":0.7}' } }],
+        }),
+      };
+    },
+  });
+
+  const dream = await client.generateDream({
+    state: { consciousness: 'sleeping' },
+    material: '',
+    topDrives: [],
+  });
+
+  assert.equal(calls[0].url, 'https://openrouter.ai/api/v1/chat/completions');
+  assert.equal(calls[0].options.headers.Authorization, 'Bearer openrouter-secret');
+  assert.equal(calls[0].options.headers['HTTP-Referer'], 'https://xinchao.example.com');
+  assert.equal(calls[0].options.headers['X-OpenRouter-Title'], '洵舟 · 心潮');
+  assert.equal(JSON.parse(calls[0].options.body).thinking, undefined);
+  assert.equal(dream.source, 'model');
+  assert.equal(dream.model, 'provider/model');
+});
+
+test('dream generation retries without structured output when a provider rejects it', async () => {
+  const bodies = [];
+  const client = new ModelClient({
+    enabled: true,
+    apiKey: 'secret',
+    baseUrl: 'https://openrouter.ai/api/v1',
+    name: 'provider/model',
+    maxInputChars: 10000,
+    maxOutputTokens: 400,
+    timeoutMs: 1000,
+  }, {
+    fetchImpl: async (_url, options) => {
+      bodies.push(JSON.parse(options.body));
+      if (bodies.length === 1) return { ok: false, status: 400 };
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          choices: [{ message: { content: '{"dream":"海","residue":"潮声","awareness":"梦醒","lucidity":0.4}' } }],
+        }),
+      };
+    },
+  });
+
+  await client.generateDream({
+    state: { consciousness: 'sleeping' },
+    material: '',
+    topDrives: [],
+  });
+
+  assert.deepEqual(bodies[0].response_format, { type: 'json_object' });
+  assert.equal(bodies[1].response_format, undefined);
+});

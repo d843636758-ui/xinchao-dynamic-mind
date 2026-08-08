@@ -227,7 +227,11 @@ function renderDreams(snapshot) {
       : `留下${[dream.hasDream ? '梦境' : '', dream.hasResidue ? '余韵' : '', dream.hasAwareness ? '醒后意识' : ''].filter(Boolean).join('、') || '一段安静的记录'}。`;
     heading.append(node('p', '', summary));
     const meta = node('div', 'dream-meta');
-    meta.append(node('span', 'micro-tag', dream.source || 'unknown'));
+    const sourceLabel = dream.source === 'model'
+      ? '模型梦境'
+      : dream.source === 'rules' ? '规则回退' : (dream.source || 'unknown');
+    meta.append(node('span', 'micro-tag', sourceLabel));
+    if (dream.source === 'model' && dream.model) meta.append(node('span', 'micro-tag', dream.model));
     if (dream.lucidity != null) meta.append(node('span', 'micro-tag', `清晰度 ${Math.round(dream.lucidity * 100)}%`));
     if (!privateText) meta.append(node('span', 'micro-tag', '正文已保护'));
     card.append(heading, meta);

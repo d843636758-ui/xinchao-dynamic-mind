@@ -1,8 +1,9 @@
 import { readFileSync } from 'node:fs';
 
 export class ModelClient {
-  constructor(config) {
+  constructor(config, { fetchImpl = globalThis.fetch } = {}) {
     this.config = config;
+    this.fetch = fetchImpl;
     this.agentName = String(config.agentName ?? 'AI 助手').trim() || 'AI 助手';
     this.notificationRecipient = String(config.notificationRecipient ?? '你的人类').trim() || '你的人类';
     this.dreamPushPrompt = loadPrompt(
@@ -34,7 +35,6 @@ export class ModelClient {
       ],
       temperature: 0.9,
       max_tokens: this.config.maxOutputTokens,
-      thinking: { type: 'disabled' },
       response_format: { type: 'json_object' }
     };
 
@@ -71,8 +71,7 @@ export class ModelClient {
         { role: 'user', content: input }
       ],
       temperature: 0.9,
-      max_tokens: Math.min(180, this.config.maxOutputTokens),
-      thinking: { type: 'disabled' }
+      max_tokens: Math.min(180, this.config.maxOutputTokens)
     });
     if (!response.ok) throw new Error(`dream push model request failed: HTTP ${response.status}`);
     const payload = await response.json();
@@ -103,7 +102,6 @@ export class ModelClient {
       ],
       temperature: 0.85,
       max_tokens: Math.min(220, this.config.maxOutputTokens),
-      thinking: { type: 'disabled' },
       response_format: { type: 'json_object' }
     };
     let response = await this.request(body);
@@ -142,7 +140,6 @@ export class ModelClient {
       ],
       temperature: 0.9,
       max_tokens: Math.min(240, this.config.maxOutputTokens),
-      thinking: { type: 'disabled' },
       response_format: { type: 'json_object' }
     });
     if (!response.ok) throw new Error(`model request failed: HTTP ${response.status}`);
@@ -152,9 +149,19 @@ export class ModelClient {
   }
 
   request(body) {
-    return fetch(`${this.config.baseUrl}/chat/completions`, {
+    const headers = {
+      Authorization: `Bearer ${this.config.apiKey}`,
+      'Content-Type': 'application/json',
+    };
+    if (String(this.config.httpReferer || '').trim()) {
+      headers['HTTP-Referer'] = String(this.config.httpReferer).trim();
+    }
+    if (String(this.config.appTitle || '').trim()) {
+      headers['X-OpenRouter-Title'] = String(this.config.appTitle).trim();
+    }
+    return this.fetch(`${this.config.baseUrl}/chat/completions`, {
       method: 'POST',
-      headers: { Authorization: `Bearer ${this.config.apiKey}`, 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(this.config.timeoutMs)
     });

@@ -29,6 +29,8 @@ export function loadConfig() {
       baseUrl: (process.env.MODEL_BASE_URL ?? 'http://127.0.0.1:11434/v1').replace(/\/$/, ''),
       apiKey: process.env.MODEL_API_KEY ?? '',
       name: process.env.MODEL_NAME ?? 'local-model',
+      httpReferer: process.env.MODEL_HTTP_REFERER ?? '',
+      appTitle: process.env.MODEL_APP_TITLE ?? `${agentName} · 心潮`,
       timeoutMs: number('MODEL_TIMEOUT_MS', 30000, 1000, 120000),
       maxInputChars: number('MODEL_MAX_INPUT_CHARS', 10000, 1000, 50000),
       maxOutputTokens: number('MODEL_MAX_OUTPUT_TOKENS', 650, 100, 4000),
@@ -133,6 +135,22 @@ export function loadConfig() {
 }
 
 export function validateConfig(config) {
+  if (config.model?.enabled) {
+    if (!String(config.model.apiKey || '').trim()) {
+      throw new Error('MODEL_API_KEY is required when MODEL_ENABLED=true');
+    }
+    if (!String(config.model.name || '').trim()) {
+      throw new Error('MODEL_NAME is required when MODEL_ENABLED=true');
+    }
+    const baseUrl = String(config.model.baseUrl || '');
+    let parsed;
+    try { parsed = new URL(baseUrl); }
+    catch { throw new Error('MODEL_BASE_URL must be a valid URL when MODEL_ENABLED=true'); }
+    const local = ['localhost', '127.0.0.1', '::1'].includes(parsed.hostname);
+    if (parsed.protocol !== 'https:' && !(local && parsed.protocol === 'http:')) {
+      throw new Error('MODEL_BASE_URL must use HTTPS outside localhost');
+    }
+  }
   const externalMemoryEnabled = Boolean(
     config.ombre.readEnabled
     || config.ombre.writeEnabled

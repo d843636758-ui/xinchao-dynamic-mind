@@ -37,6 +37,7 @@ test('dashboard snapshot is stable and private by default', () => {
     id: 'dream-private',
     createdAt: '2026-08-03T07:30:00.000Z',
     source: 'model',
+    model: 'provider/model',
     dream: '不能泄露的梦境原文',
     summary: '不能泄露的梦境摘要',
     residue: '不能泄露的梦境余韵',
@@ -57,6 +58,7 @@ test('dashboard snapshot is stable and private by default', () => {
   assert.equal(snapshot.dreams[0].hasResidue, true);
   assert.equal(snapshot.dreams[0].hasDream, true);
   assert.equal(snapshot.dreams[0].lucidity, 0.72);
+  assert.equal(snapshot.dreams[0].model, 'provider/model');
   assert.equal(snapshot.dreams[0].dream, undefined);
   assert.equal(snapshot.dreams[0].residue, undefined);
   assert.doesNotMatch(raw, /不能泄露/);

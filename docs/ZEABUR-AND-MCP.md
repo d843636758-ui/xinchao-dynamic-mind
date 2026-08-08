@@ -104,3 +104,30 @@ OB 不复制进新的聚合存储：它继续通过既有 Ombre adapter 向
   日志或稳定人物核心。
 - Garden 等外部动作仍遵守各自的最新状态与幂等规则；心潮的念头文本只当作
   体验材料，不能直接当成行动命令。
+
+## 5. OpenRouter 自主造梦
+
+心潮内置 OpenAI-compatible 模型适配器。在 Zeabur 中设置：
+
+```env
+SHADOW_MODE=false
+MODEL_ENABLED=true
+MODEL_BASE_URL=https://openrouter.ai/api/v1
+MODEL_API_KEY=你自己的OpenRouterKey
+MODEL_NAME=你在OpenRouter选择的完整模型slug
+MODEL_HTTP_REFERER=https://你的心潮域名
+MODEL_APP_TITLE=洵舟 · 心潮
+```
+
+`MODEL_NAME` 必须使用 OpenRouter 页面显示的完整 slug，包含提供商前缀。
+`MODEL_API_KEY` 只填在 Zeabur 的服务端环境变量，不发到聊天、不写入仓库、
+不用 Dashboard/OAuth/其他 MCP 的密钥代替。
+
+真实模型梦境需要 `SHADOW_MODE=false` 和 `MODEL_ENABLED=true` 同时生效。
+`SHADOW_MODE=true` 时永远只生成规则种子；OpenRouter 请求失败时也会保守回退，
+但 Dashboard 会明确标记为“规则回退”，只有真正的模型产出才显示“模型梦境”
+与实际模型 slug。
+
+造梦不是每次打开页面立即执行：默认在连续 90 分钟未交互后进入睡眠，
+并在 15 分钟结算周期中触发；同一天的频率仍受
+`DREAM_MIN_INTERVAL_HOURS` 和 `DREAM_MAX_PER_DAY` 限制。
