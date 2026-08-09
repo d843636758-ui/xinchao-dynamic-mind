@@ -43,6 +43,9 @@ test('dashboard snapshot is stable and private by default', () => {
     residue: '不能泄露的梦境余韵',
     awareness: '不能泄露的醒后意识',
     lucidity: 0.72,
+    memoryStatus: 'used_catalog',
+    memoryChars: 242,
+    ombreWriteStatus: 'stored',
   });
   const snapshot = buildDashboardSnapshot(state, config(), now);
   const raw = JSON.stringify(snapshot);
@@ -59,6 +62,9 @@ test('dashboard snapshot is stable and private by default', () => {
   assert.equal(snapshot.dreams[0].hasDream, true);
   assert.equal(snapshot.dreams[0].lucidity, 0.72);
   assert.equal(snapshot.dreams[0].model, 'provider/model');
+  assert.equal(snapshot.dreams[0].memoryStatus, 'used_catalog');
+  assert.equal(snapshot.dreams[0].memoryChars, 242);
+  assert.equal(snapshot.dreams[0].ombreWriteStatus, 'stored');
   assert.equal(snapshot.dreams[0].dream, undefined);
   assert.equal(snapshot.dreams[0].residue, undefined);
   assert.doesNotMatch(raw, /不能泄露/);
