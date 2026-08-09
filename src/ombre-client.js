@@ -74,6 +74,38 @@ export class OmbreClient {
     return extractText(result).slice(0, 10000);
   }
 
+  async dreamMaterial(drives = []) {
+    const primary = extractText(await this.call('breath', {
+      query: withDriveHint('近期重要记忆、情绪、关系变化和未完成事项', drives),
+      max_results: this.config.breathMaxResults,
+      max_tokens: this.config.breathMaxTokens,
+    })).slice(0, 10000);
+
+    if (usableDreamMaterial(primary)) {
+      return dreamMaterialResult(primary, 'used_primary', 1);
+    }
+
+    const catalog = extractText(await this.call('breath', {
+      catalog: true,
+      max_results: 20,
+      max_tokens: 3000,
+    })).slice(0, 16000);
+    const title = selectDreamCatalogTitle(catalog);
+    if (!title) {
+      return dreamMaterialResult('', recallFailureStatus(primary), 2);
+    }
+
+    const focused = extractText(await this.call('breath', {
+      query: title,
+      max_results: 1,
+      max_tokens: 3000,
+    })).slice(0, 10000);
+    if (usableDreamMaterial(focused)) {
+      return dreamMaterialResult(focused, 'used_catalog', 3);
+    }
+    return dreamMaterialResult('', recallFailureStatus(focused || primary), 3);
+  }
+
   async daytimeMaterial(drives = []) {
     const result = await this.call('breath', {
       query: withDriveHint('白天自然浮现的近期记忆、具体细节、未说完的话和当下牵挂；不要返回系统配置或技术信息', drives),
@@ -122,10 +154,9 @@ export class OmbreClient {
     ].join('\n');
     const result = await this.call('hold', {
       content,
-      tags: 'dream',
+      tags: 'dream,xinchao-dream,auto',
       importance: 7,
-      auto: true,
-      source: 'xinchao-dream',
+      why_remembered: '由心潮睡眠结算自动生成并回存的梦境记录',
     });
     const text = extractText(result);
     return text.match(/[a-f0-9]{12,}/i)?.[0] ?? null;
@@ -150,6 +181,42 @@ function withDriveHint(base, drives) {
 
 const DRIVE_HINT_MIN = 0.5;
 const DRIVE_HINT_MAX_LABELS = 3;
+const DREAM_MEMORY_PLACEHOLDER = /token\s*预算不足|预算不足[^\n]*max_tokens|非检索命中/i;
+const TECHNICAL_MEMORY = /心潮|dashboard|openrouter|mcp|oauth|token|部署|代码|编程|接口|配置|修复|测试|日志|zeabur/i;
+
+function usableDreamMaterial(value) {
+  const text = String(value ?? '').trim();
+  return Boolean(text) && !DREAM_MEMORY_PLACEHOLDER.test(text);
+}
+
+function recallFailureStatus(value) {
+  return /token\s*预算不足|预算不足[^\n]*max_tokens/i.test(String(value ?? ''))
+    ? 'budget_exhausted'
+    : 'empty';
+}
+
+function dreamMaterialResult(text, status, attempts) {
+  const clean = String(text ?? '').trim();
+  return {
+    text: clean,
+    status,
+    chars: Array.from(clean).length,
+    attempts,
+  };
+}
+
+function selectDreamCatalogTitle(value) {
+  const candidates = String(value ?? '').split('\n').flatMap((line) => {
+    const match = line.match(/^(\d{4}-\d{2}-\d{2}\s+\d{2}-\d{2}-\d{2})\s+(.+?)\s+\|\s+(.+?)\s+\|\s+\d+\s*$/);
+    if (!match) return [];
+    const title = `${match[1]} ${match[2]}`.trim();
+    const classification = `${match[2]} ${match[3]}`;
+    if (!match[2].trim() || TECHNICAL_MEMORY.test(classification)) return [];
+    return [{ timestamp: match[1], title }];
+  });
+  candidates.sort((left, right) => right.timestamp.localeCompare(left.timestamp));
+  return candidates[0]?.title ?? '';
+}
 
 function parseMcp(text) {
   const data = text.split('\n').find((line) => line.startsWith('data:'))?.slice(5).trim() ?? text;
