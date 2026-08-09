@@ -101,6 +101,65 @@ test('strong drives bias what surfaces, and never gate it', async () => {
   assert.match(query, /没有直接相关的就照常返回近期重要的/);
 });
 
+test('dream recall rejects budget placeholders and narrows through a non-technical catalog entry', async () => {
+  const { client, calls } = readClient();
+  client.call = async (name, args) => {
+    calls.push({ name, args });
+    if (args.catalog) {
+      return { result: { content: [{ type: 'text', text: [
+        '=== 记忆目录（3 桶）===',
+        '2026-08-09 18-00-00 OpenRouter 配置修复 | 编程,AI | 7',
+        '2026-08-09 17-29-08 新窗口接上连续性重新贴回她身边 | 恋爱,自省 | 6',
+        '2026-08-08 10-00-00 一起散步看见晚霞 | 恋爱,生活 | 6',
+      ].join('\n') }] } };
+    }
+    if (args.query?.startsWith('2026-08-09 17-29-08')) {
+      return { result: { content: [{ type: 'text', text: '她说会一直在这里，我重新贴回她身边。' }] } };
+    }
+    return { result: { content: [{ type: 'text', text: '[token 预算不足：请提高 max_tokens 后重试。]' }] } };
+  };
+
+  const material = await client.dreamMaterial([{ key: 'monitor', label: '惦记她', value: 0.9 }]);
+
+  assert.equal(material.status, 'used_catalog');
+  assert.equal(material.text, '她说会一直在这里，我重新贴回她身边。');
+  assert.equal(material.chars, Array.from(material.text).length);
+  assert.equal(material.attempts, 3);
+  assert.equal(calls[1].args.catalog, true);
+  assert.equal(calls[2].args.query, '2026-08-09 17-29-08 新窗口接上连续性重新贴回她身边');
+  assert.doesNotMatch(calls[2].args.query, /OpenRouter/);
+});
+
+test('dream recall never passes budget or non-match placeholders to the model', async () => {
+  const { client } = readClient();
+  client.call = async (_name, args) => {
+    if (args.catalog) return { result: { content: [{ type: 'text', text: '=== 记忆目录（0 桶）===' }] } };
+    return { result: { content: [{ type: 'text', text: '[token 预算不足：请提高 max_tokens 后重试。]' }] } };
+  };
+
+  const material = await client.dreamMaterial();
+
+  assert.equal(material.status, 'budget_exhausted');
+  assert.equal(material.text, '');
+  assert.equal(material.chars, 0);
+  assert.equal(material.attempts, 2);
+});
+
+test('dream recall keeps a genuine primary memory without extra calls', async () => {
+  const { client, calls } = readClient();
+  client.call = async (name, args) => {
+    calls.push({ name, args });
+    return { result: { content: [{ type: 'text', text: '一起在雨后看见路灯映在水里。' }] } };
+  };
+
+  const material = await client.dreamMaterial();
+
+  assert.equal(material.status, 'used_primary');
+  assert.equal(material.text, '一起在雨后看见路灯映在水里。');
+  assert.equal(material.attempts, 1);
+  assert.equal(calls.length, 1);
+});
+
 test('weak drives leave the recall query untouched', async () => {
   const { client, calls } = readClient();
   const baseline = await readClient();
@@ -144,8 +203,9 @@ test('automatic dream writes identify themselves and never impersonate manual me
   });
 
   assert.equal(captured.name, 'hold');
-  assert.equal(captured.args.auto, true);
-  assert.equal(captured.args.source, 'xinchao-dream');
   assert.equal(captured.args.importance, 7);
-  assert.equal(captured.args.tags, 'dream');
+  assert.equal(captured.args.tags, 'dream,xinchao-dream,auto');
+  assert.match(captured.args.why_remembered, /心潮睡眠结算/);
+  assert.equal('auto' in captured.args, false);
+  assert.equal('source' in captured.args, false);
 });
