@@ -19,6 +19,70 @@ function readClient() {
   return { client, calls };
 }
 
+function mcpResponse(body, { status = 200, sessionId = null } = {}) {
+  const headers = { 'Content-Type': 'application/json' };
+  if (sessionId) headers['Mcp-Session-Id'] = sessionId;
+  return new Response(body == null ? null : JSON.stringify(body), { status, headers });
+}
+
+test('stateless Ombre servers work without Mcp-Session-Id', async () => {
+  const requests = [];
+  const client = new OmbreClient({
+    writeEnabled: false,
+    readEnabled: true,
+    url: 'https://ombre.example/mcp',
+    token: 'secret',
+    breathMaxResults: 3,
+    breathMaxTokens: 800,
+  }, {
+    fetchImpl: async (_url, options) => {
+      const payload = JSON.parse(options.body);
+      requests.push({ payload, headers: options.headers });
+      if (payload.method === 'notifications/initialized') return mcpResponse(null, { status: 202 });
+      if (payload.method === 'tools/call') {
+        return mcpResponse({ jsonrpc: '2.0', id: payload.id, result: { content: [{ type: 'text', text: '无会话也能读取' }] } });
+      }
+      return mcpResponse({ jsonrpc: '2.0', id: payload.id, result: { protocolVersion: '2025-06-18', capabilities: {}, serverInfo: { name: 'ombre', version: '1' } } });
+    },
+  });
+
+  assert.equal(await client.recentMaterial(), '无会话也能读取');
+  assert.equal(await client.recentMaterial(), '无会话也能读取');
+  assert.deepEqual(requests.map(({ payload }) => payload.method), [
+    'initialize',
+    'notifications/initialized',
+    'tools/call',
+    'tools/call',
+  ]);
+  assert.ok(requests.every(({ headers }) => !('Mcp-Session-Id' in headers)));
+});
+
+test('stateful Ombre servers still receive their returned session id', async () => {
+  const requests = [];
+  const client = new OmbreClient({
+    writeEnabled: false,
+    readEnabled: true,
+    url: 'https://ombre.example/mcp',
+    token: '',
+    breathMaxResults: 3,
+    breathMaxTokens: 800,
+  }, {
+    fetchImpl: async (_url, options) => {
+      const payload = JSON.parse(options.body);
+      requests.push({ payload, headers: options.headers });
+      if (payload.method === 'initialize') {
+        return mcpResponse({ jsonrpc: '2.0', id: payload.id, result: { protocolVersion: '2025-06-18', capabilities: {}, serverInfo: { name: 'ombre', version: '1' } } }, { sessionId: 'session-123' });
+      }
+      if (payload.method === 'notifications/initialized') return mcpResponse(null, { status: 202 });
+      return mcpResponse({ jsonrpc: '2.0', id: payload.id, result: { content: [{ type: 'text', text: '有会话也能读取' }] } });
+    },
+  });
+
+  assert.equal(await client.recentMaterial(), '有会话也能读取');
+  assert.equal(requests[1].headers['Mcp-Session-Id'], 'session-123');
+  assert.equal(requests[2].headers['Mcp-Session-Id'], 'session-123');
+});
+
 test('strong drives bias what surfaces, and never gate it', async () => {
   const { client, calls } = readClient();
 

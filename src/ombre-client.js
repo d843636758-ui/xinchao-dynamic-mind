@@ -1,7 +1,9 @@
 export class OmbreClient {
-  constructor(config) {
+  constructor(config, { fetchImpl = globalThis.fetch } = {}) {
     this.config = config;
+    this.fetch = fetchImpl;
     this.sessionId = null;
+    this.initialized = false;
     this.initializePromise = null;
   }
 
@@ -13,7 +15,7 @@ export class OmbreClient {
     };
     if (this.config.token) headers.Authorization = `Bearer ${this.config.token}`;
     if (this.sessionId) headers['Mcp-Session-Id'] = this.sessionId;
-    const response = await fetch(this.config.url, {
+    const response = await this.fetch(this.config.url, {
       method: 'POST', headers,
       body: JSON.stringify(payload),
       signal: AbortSignal.timeout(15000)
@@ -26,7 +28,7 @@ export class OmbreClient {
   }
 
   async initialize() {
-    if (this.sessionId) return;
+    if (this.initialized) return;
     if (!this.initializePromise) {
       this.initializePromise = (async () => {
         await this.post({
@@ -39,8 +41,11 @@ export class OmbreClient {
             clientInfo: { name: 'xinchao-dynamic-mind', version: '2.9.1' },
           },
         });
-        if (!this.sessionId) throw new Error('Ombre MCP did not return a session id');
         await this.post({ jsonrpc: '2.0', method: 'notifications/initialized' }, false);
+        // Mcp-Session-Id is optional in Streamable HTTP. Stateful servers
+        // return one and post() reuses it; stateless servers intentionally do
+        // not, so a successful initialization must still be remembered.
+        this.initialized = true;
       })().finally(() => { this.initializePromise = null; });
     }
     return this.initializePromise;
@@ -54,6 +59,7 @@ export class OmbreClient {
       } catch (error) {
         if (attempt || !/HTTP (400|404)/.test(error.message)) throw error;
         this.sessionId = null;
+        this.initialized = false;
       }
     }
     throw new Error('Ombre MCP call failed after session refresh');
