@@ -131,9 +131,20 @@ async function runCycle() {
 
     if (dreamAllowed(state, now, config.dreamMinIntervalHours, config.dreamMaxPerDay)) {
       let material = '';
+      let memoryStatus = config.shadowMode || !config.ombre.readEnabled ? 'disabled' : 'empty';
+      let memoryChars = 0;
+      let memoryAttempts = 0;
       if (!config.shadowMode && config.ombre.readEnabled) {
-        try { material = await ombre.recentMaterial(topDrives(state)); }
-        catch (error) { log('ombre_read_failed', { message: error.message }); }
+        try {
+          const recalled = await ombre.dreamMaterial(topDrives(state));
+          material = recalled.text;
+          memoryStatus = recalled.status;
+          memoryChars = recalled.chars;
+          memoryAttempts = recalled.attempts;
+        } catch (error) {
+          memoryStatus = 'error';
+          log('ombre_read_failed', { message: error.message });
+        }
       }
 
       let generated;
@@ -148,10 +159,24 @@ async function runCycle() {
         }
       }
 
-      const dream = { id: randomUUID(), createdAt: now.toISOString(), ...generated, ombreBucketId: null };
+      const dream = {
+        id: randomUUID(),
+        createdAt: now.toISOString(),
+        ...generated,
+        memoryStatus,
+        memoryChars,
+        memoryAttempts,
+        ombreBucketId: null,
+        ombreWriteStatus: config.shadowMode || !config.ombre.writeEnabled ? 'disabled' : 'pending',
+      };
       if (!config.shadowMode && config.ombre.writeEnabled) {
-        try { dream.ombreBucketId = await ombre.storeDream(dream); }
-        catch (error) { log('ombre_write_failed', { message: error.message }); }
+        try {
+          dream.ombreBucketId = await ombre.storeDream(dream);
+          dream.ombreWriteStatus = dream.ombreBucketId ? 'stored' : 'accepted';
+        } catch (error) {
+          dream.ombreWriteStatus = 'error';
+          log('ombre_write_failed', { message: error.message });
+        }
       }
 
       state = await updateState({
@@ -164,7 +189,16 @@ async function runCycle() {
         return recordDream(latest, dream);
       });
       dreamCreated = true;
-      log('dream_settled', { source: dream.source, shadow: config.shadowMode, usedBreath: Boolean(material), revision: state.revision });
+      log('dream_settled', {
+        source: dream.source,
+        shadow: config.shadowMode,
+        usedBreath: memoryStatus === 'used_primary' || memoryStatus === 'used_catalog',
+        memoryStatus,
+        memoryChars,
+        memoryAttempts,
+        ombreWriteStatus: dream.ombreWriteStatus,
+        revision: state.revision,
+      });
 
       if (!config.shadowMode && config.bark.enabled && dreamContactIsIdle && barkAllowed(state, now, config.bark.minIntervalHours, config.bark.maxPerDay, 'dream')) {
         try {
