@@ -57,6 +57,13 @@ export function projectDreams(state, includePrivateText, limit = 12) {
     const lucidity = dream?.lucidity != null && Number.isFinite(lucidityNumber)
       ? Number(clamp(lucidityNumber).toFixed(4))
       : null;
+    const memoryStatus = ['used_primary', 'used_catalog', 'budget_exhausted', 'empty', 'error', 'disabled']
+      .includes(dream?.memoryStatus) ? dream.memoryStatus : null;
+    const memoryChars = Number.isFinite(Number(dream?.memoryChars))
+      ? Math.max(0, Math.min(10000, Math.trunc(Number(dream.memoryChars))))
+      : null;
+    const ombreWriteStatus = ['stored', 'accepted', 'error', 'disabled']
+      .includes(dream?.ombreWriteStatus) ? dream.ombreWriteStatus : null;
     return {
       id: compact(dream?.id, 120) || null,
       createdAt: validDate(dream?.createdAt),
@@ -67,6 +74,9 @@ export function projectDreams(state, includePrivateText, limit = 12) {
       hasSummary: Boolean(summary),
       hasAwareness: Boolean(compact(dream?.awareness)),
       lucidity,
+      memoryStatus,
+      memoryChars,
+      ombreWriteStatus,
       ...(includePrivateText ? {
         dream: compact(dream?.dream, 4000) || null,
         summary,

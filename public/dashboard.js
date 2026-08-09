@@ -253,6 +253,13 @@ function renderDreams(snapshot) {
     meta.append(node('span', 'micro-tag', sourceLabel));
     if (dream.source === 'model' && dream.model) meta.append(node('span', 'micro-tag', dream.model));
     if (dream.lucidity != null) meta.append(node('span', 'micro-tag', `清晰度 ${Math.round(dream.lucidity * 100)}%`));
+    if (dream.memoryStatus === 'used_primary') meta.append(node('span', 'micro-tag', `OB 记忆 ${dream.memoryChars ?? 0}字`));
+    if (dream.memoryStatus === 'used_catalog') meta.append(node('span', 'micro-tag', `OB 精准记忆 ${dream.memoryChars ?? 0}字`));
+    if (dream.memoryStatus === 'budget_exhausted') meta.append(node('span', 'micro-tag', 'OB 记忆超出预算'));
+    if (dream.memoryStatus === 'empty') meta.append(node('span', 'micro-tag', 'OB 未浮现正文'));
+    if (dream.memoryStatus === 'error') meta.append(node('span', 'micro-tag', 'OB 读取失败'));
+    if (['stored', 'accepted'].includes(dream.ombreWriteStatus)) meta.append(node('span', 'micro-tag', '已回存 OB'));
+    if (dream.ombreWriteStatus === 'error') meta.append(node('span', 'micro-tag', 'OB 回存失败'));
     if (!privateText) meta.append(node('span', 'micro-tag', '正文已保护'));
     card.append(heading, meta);
     return card;
