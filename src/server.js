@@ -171,8 +171,15 @@ async function runCycle() {
       };
       if (!config.shadowMode && config.ombre.writeEnabled) {
         try {
-          dream.ombreBucketId = await ombre.storeDream(dream);
-          dream.ombreWriteStatus = dream.ombreBucketId ? 'stored' : 'accepted';
+          const stored = await ombre.storeDream(dream);
+          dream.ombreBucketId = stored?.bucketId ?? null;
+          dream.ombreWriteStatus = stored?.status ?? 'accepted';
+          if (stored?.recovered) {
+            log('ombre_write_recovered', {
+              status: dream.ombreWriteStatus,
+              verificationAttempts: stored.verificationAttempts,
+            });
+          }
         } catch (error) {
           dream.ombreWriteStatus = 'error';
           log('ombre_write_failed', { message: error.message });

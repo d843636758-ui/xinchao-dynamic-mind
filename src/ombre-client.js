@@ -1,7 +1,8 @@
 export class OmbreClient {
-  constructor(config, { fetchImpl = globalThis.fetch } = {}) {
+  constructor(config, { fetchImpl = globalThis.fetch, sleepImpl = sleep } = {}) {
     this.config = config;
     this.fetch = fetchImpl;
+    this.sleep = sleepImpl;
     this.sessionId = null;
     this.initialized = false;
     this.initializePromise = null;
@@ -24,7 +25,7 @@ export class OmbreClient {
     this.sessionId = response.headers.get('mcp-session-id') ?? this.sessionId;
     if (!expectBody) return null;
     const text = await response.text();
-    return text ? parseMcp(text) : null;
+    return text ? parseMcp(text, payload.id) : null;
   }
 
   async initialize() {
@@ -55,7 +56,9 @@ export class OmbreClient {
     for (let attempt = 0; attempt < 2; attempt += 1) {
       await this.initialize();
       try {
-        return await this.post({ jsonrpc: '2.0', id: Date.now(), method: 'tools/call', params: { name, arguments: args } });
+        const response = await this.post({ jsonrpc: '2.0', id: Date.now(), method: 'tools/call', params: { name, arguments: args } });
+        if (response?.error) throw new Error(`Ombre MCP error: ${mcpErrorMessage(response.error)}`);
+        return response;
       } catch (error) {
         if (attempt || !/HTTP (400|404)/.test(error.message)) throw error;
         this.sessionId = null;
@@ -150,20 +153,60 @@ export class OmbreClient {
 
   async storeDream(dream) {
     if (!this.config.writeEnabled) return null;
+    const dreamId = String(dream?.id ?? '').trim();
+    const marker = dreamId ? `心潮梦境ID：${dreamId}` : '';
     const content = [
+      marker,
       `梦境：${dream.dream}`,
       `梦境余韵：${dream.residue}`,
       `醒后意识：${dream.awareness}`,
       '说明：这是睡眠结算产生的梦境，不是现实事件；调用外部记忆服务不等于醒来。'
-    ].join('\n');
-    const result = await this.call('hold', {
-      content,
-      tags: 'dream,xinchao-dream,auto',
-      importance: 7,
-      why_remembered: '由心潮睡眠结算自动生成并回存的梦境记录',
-    });
-    const text = extractText(result);
-    return text.match(/[a-f0-9]{12,}/i)?.[0] ?? null;
+    ].filter(Boolean).join('\n');
+    try {
+      const result = await this.call('hold', {
+        content,
+        tags: 'dream,xinchao-dream,auto',
+        importance: 7,
+        why_remembered: '由心潮睡眠结算自动生成并回存的梦境记录',
+      });
+      return dreamStorageResult(extractBucketId(extractText(result)));
+    } catch (error) {
+      // A write may commit before its HTTP/SSE acknowledgement is lost. Never
+      // retry hold blindly: verify the unique marker so recovery cannot create
+      // a duplicate dream bucket.
+      if (!dreamId) throw error;
+      const verified = await this.verifyStoredDream(dreamId);
+      if (!verified.found) throw error;
+      return {
+        ...dreamStorageResult(verified.bucketId),
+        recovered: true,
+        verificationAttempts: verified.attempts,
+      };
+    }
+  }
+
+  async verifyStoredDream(dreamId) {
+    const marker = `心潮梦境ID：${String(dreamId ?? '').trim()}`;
+    if (marker === '心潮梦境ID：') return { found: false, bucketId: null, attempts: 0 };
+
+    for (let attempt = 1; attempt <= DREAM_WRITE_VERIFY_ATTEMPTS; attempt += 1) {
+      if (attempt > 1) await this.sleep(DREAM_WRITE_VERIFY_DELAYS_MS[attempt - 2]);
+      try {
+        const result = await this.call('breath', {
+          query: marker,
+          tags: 'dream,xinchao-dream,auto',
+          max_results: 1,
+          max_tokens: 3000,
+        });
+        const text = extractText(result);
+        if (text.includes(marker)) {
+          return { found: true, bucketId: extractBucketId(text), attempts: attempt };
+        }
+      } catch {
+        // A verification read is safe to retry; the original write is not.
+      }
+    }
+    return { found: false, bucketId: null, attempts: DREAM_WRITE_VERIFY_ATTEMPTS };
   }
 }
 
@@ -185,6 +228,8 @@ function withDriveHint(base, drives) {
 
 const DRIVE_HINT_MIN = 0.5;
 const DRIVE_HINT_MAX_LABELS = 3;
+const DREAM_WRITE_VERIFY_ATTEMPTS = 3;
+const DREAM_WRITE_VERIFY_DELAYS_MS = [300, 900];
 const DREAM_MEMORY_PLACEHOLDER = /token\s*预算不足|预算不足[^\n]*max_tokens|非检索命中/i;
 const TECHNICAL_MEMORY = /心潮|dashboard|openrouter|mcp|oauth|token|部署|代码|编程|接口|配置|修复|测试|日志|zeabur/i;
 const MEMORY_ENVELOPE_LINE = /^\[bucket_id:[^\]]+\](?:\s+\[[^\]]+\])+\s*$/i;
@@ -241,12 +286,56 @@ function selectDreamCatalogTitle(value) {
   return candidates[0]?.title ?? '';
 }
 
-function parseMcp(text) {
-  const data = text.split('\n').find((line) => line.startsWith('data:'))?.slice(5).trim() ?? text;
-  return JSON.parse(data);
+function parseMcp(text, expectedId = null) {
+  const dataEvents = String(text).split(/\r?\n\r?\n+/).flatMap((block) => {
+    const data = block.split(/\r?\n/)
+      .filter((line) => line.startsWith('data:'))
+      .map((line) => line.slice(5).trimStart())
+      .join('\n')
+      .trim();
+    if (!data || data === '[DONE]') return [];
+    try {
+      return [JSON.parse(data)];
+    } catch {
+      return [];
+    }
+  });
+  if (!dataEvents.length) return JSON.parse(text);
+  const matching = expectedId == null ? null : dataEvents.findLast((event) => (
+    event?.id === expectedId && ('result' in event || 'error' in event)
+  ));
+  return matching
+    ?? dataEvents.findLast((event) => event && ('result' in event || 'error' in event))
+    ?? dataEvents.at(-1);
 }
 
 function extractText(result) {
   const content = result?.result?.content ?? result?.content ?? [];
   return content.filter((part) => part.type === 'text').map((part) => part.text).join('\n');
+}
+
+function extractBucketId(value) {
+  const text = String(value ?? '');
+  return text.match(/\[bucket_id:([a-f0-9]{12,})\]/i)?.[1]
+    ?? text.match(/\b([a-f0-9]{12,})\b/i)?.[1]
+    ?? null;
+}
+
+function dreamStorageResult(bucketId) {
+  return {
+    bucketId: bucketId ?? null,
+    status: bucketId ? 'stored' : 'accepted',
+    recovered: false,
+    verificationAttempts: 0,
+  };
+}
+
+function mcpErrorMessage(error) {
+  if (typeof error?.message === 'string' && error.message.trim()) return error.message.trim();
+  if (typeof error === 'string' && error.trim()) return error.trim();
+  return 'unknown JSON-RPC error';
+}
+
+function sleep(milliseconds) {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
