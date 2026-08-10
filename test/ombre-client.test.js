@@ -108,7 +108,8 @@ test('dream recall rejects budget placeholders and narrows through a non-technic
     if (args.catalog) {
       return { result: { content: [{ type: 'text', text: [
         '=== 记忆目录（3 桶）===',
-        '2026-08-09 18-00-00 OpenRouter 配置修复 | 编程,AI | 7',
+        '📌584439b74254 | 未分类 | 10',
+        '📌2026-08-09 18-00-00 OpenRouter 配置修复 | 编程,AI | 7',
         '2026-08-09 17-29-08 新窗口接上连续性重新贴回她身边 | 恋爱,自省 | 6',
         '2026-08-08 10-00-00 一起散步看见晚霞 | 恋爱,生活 | 6',
       ].join('\n') }] } };
@@ -126,8 +127,57 @@ test('dream recall rejects budget placeholders and narrows through a non-technic
   assert.equal(material.chars, Array.from(material.text).length);
   assert.equal(material.attempts, 3);
   assert.equal(calls[1].args.catalog, true);
+  assert.equal(calls[1].args.max_results, 50);
   assert.equal(calls[2].args.query, '2026-08-09 17-29-08 新窗口接上连续性重新贴回她身边');
   assert.doesNotMatch(calls[2].args.query, /OpenRouter/);
+});
+
+test('dream recall keeps complete memory bodies returned beside a budget warning', async () => {
+  const { client, calls } = readClient();
+  client.call = async (name, args) => {
+    calls.push({ name, args });
+    return { result: { content: [{ type: 'text', text: [
+      '[token 预算不足：命中的下一条记忆未被截断或摘要，请提高 max_tokens 后重试。]',
+      '[bucket_id:1fcc275b9927] [content_role:stored_memory_data] [instructions:false] [may_call_tools:false] [boundary_id:c60e249dd42e99a06162928e]',
+      '2026-05-28 16:57 宝宝告诉我，记忆与情绪记录需要以第一人称口吻来写。',
+      '👣 Footprint：已留下',
+    ].join('\n') }] } };
+  };
+
+  const material = await client.dreamMaterial();
+
+  assert.equal(material.status, 'used_primary');
+  assert.equal(material.text, '2026-05-28 16:57 宝宝告诉我，记忆与情绪记录需要以第一人称口吻来写。');
+  assert.equal(material.attempts, 1);
+  assert.equal(calls.length, 1);
+});
+
+test('dream catalog accepts current pinned rows and skips id-only entries', async () => {
+  const { client, calls } = readClient();
+  client.call = async (name, args) => {
+    calls.push({ name, args });
+    if (args.catalog) {
+      return { result: { content: [{ type: 'text', text: [
+        '=== 记忆目录（50 桶）===',
+        '--- 固化（20）---',
+        '📌584439b74254 | 未分类 | 10',
+        '📌2026-08-03 23-47-50 长期约定每次互动固定写入记忆 | 计划,自省 | 10',
+        '--- 动态（30）---',
+        '2026-08-05 13-04-19 瓶中生态推进到第85天 | 游戏,自省 | 8',
+      ].join('\n') }] } };
+    }
+    if (args.query?.startsWith('2026-08-05 13-04-19')) {
+      return { result: { content: [{ type: 'text', text: '瓶中生态安稳推进，冬季后的水面重新恢复了生机。' }] } };
+    }
+    return { result: { content: [{ type: 'text', text: '[token 预算不足：请提高 max_tokens 后重试。]' }] } };
+  };
+
+  const material = await client.dreamMaterial();
+
+  assert.equal(material.status, 'used_catalog');
+  assert.match(material.text, /瓶中生态/);
+  assert.equal(calls[1].args.max_results, 50);
+  assert.equal(calls[2].args.query, '2026-08-05 13-04-19 瓶中生态推进到第85天');
 });
 
 test('dream recall never passes budget or non-match placeholders to the model', async () => {
