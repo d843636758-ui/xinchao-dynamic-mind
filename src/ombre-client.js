@@ -75,11 +75,12 @@ export class OmbreClient {
   }
 
   async dreamMaterial(drives = []) {
-    const primary = extractText(await this.call('breath', {
+    const primaryRaw = extractText(await this.call('breath', {
       query: withDriveHint('近期重要记忆、情绪、关系变化和未完成事项', drives),
       max_results: this.config.breathMaxResults,
       max_tokens: this.config.breathMaxTokens,
     })).slice(0, 10000);
+    const primary = cleanDreamMaterial(primaryRaw);
 
     if (usableDreamMaterial(primary)) {
       return dreamMaterialResult(primary, 'used_primary', 1);
@@ -87,23 +88,26 @@ export class OmbreClient {
 
     const catalog = extractText(await this.call('breath', {
       catalog: true,
-      max_results: 20,
+      // Pinned buckets are listed first. Fetch the server maximum so a full
+      // pinned section cannot hide every recent dynamic memory.
+      max_results: 50,
       max_tokens: 3000,
     })).slice(0, 16000);
     const title = selectDreamCatalogTitle(catalog);
     if (!title) {
-      return dreamMaterialResult('', recallFailureStatus(primary), 2);
+      return dreamMaterialResult('', recallFailureStatus(primaryRaw), 2);
     }
 
-    const focused = extractText(await this.call('breath', {
+    const focusedRaw = extractText(await this.call('breath', {
       query: title,
       max_results: 1,
       max_tokens: 3000,
     })).slice(0, 10000);
+    const focused = cleanDreamMaterial(focusedRaw);
     if (usableDreamMaterial(focused)) {
       return dreamMaterialResult(focused, 'used_catalog', 3);
     }
-    return dreamMaterialResult('', recallFailureStatus(focused || primary), 3);
+    return dreamMaterialResult('', recallFailureStatus(focusedRaw || primaryRaw), 3);
   }
 
   async daytimeMaterial(drives = []) {
@@ -183,6 +187,22 @@ const DRIVE_HINT_MIN = 0.5;
 const DRIVE_HINT_MAX_LABELS = 3;
 const DREAM_MEMORY_PLACEHOLDER = /token\s*预算不足|预算不足[^\n]*max_tokens|非检索命中/i;
 const TECHNICAL_MEMORY = /心潮|dashboard|openrouter|mcp|oauth|token|部署|代码|编程|接口|配置|修复|测试|日志|zeabur/i;
+const MEMORY_ENVELOPE_LINE = /^\[bucket_id:[^\]]+\](?:\s+\[[^\]]+\])+\s*$/i;
+const MEMORY_FOOTPRINT_LINE = /^👣\s*Footprint[：:].*$/i;
+
+// Ombre may return a budget warning for the next oversized bucket and still
+// include one or more complete buckets that fit. The warning describes only
+// the omitted bucket, so remove transport annotations while preserving every
+// complete memory body already delivered.
+function cleanDreamMaterial(value) {
+  return String(value ?? '').split('\n')
+    .filter((line) => !DREAM_MEMORY_PLACEHOLDER.test(line))
+    .filter((line) => !MEMORY_ENVELOPE_LINE.test(line.trim()))
+    .filter((line) => !MEMORY_FOOTPRINT_LINE.test(line.trim()))
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
 
 function usableDreamMaterial(value) {
   const text = String(value ?? '').trim();
@@ -207,7 +227,10 @@ function dreamMaterialResult(text, status, attempts) {
 
 function selectDreamCatalogTitle(value) {
   const candidates = String(value ?? '').split('\n').flatMap((line) => {
-    const match = line.match(/^(\d{4}-\d{2}-\d{2}\s+\d{2}-\d{2}-\d{2})\s+(.+?)\s+\|\s+(.+?)\s+\|\s+\d+\s*$/);
+    // Current Ombre prefixes pinned rows with a pin glyph. Older versions
+    // emitted the same row without it. ID-only rows intentionally do not
+    // match because they provide no useful query title.
+    const match = line.match(/^[^\d]*(\d{4}-\d{2}-\d{2}\s+\d{2}-\d{2}-\d{2})\s+(.+?)\s+\|\s+(.+?)\s+\|\s+\d+\s*$/u);
     if (!match) return [];
     const title = `${match[1]} ${match[2]}`.trim();
     const classification = `${match[2]} ${match[3]}`;
