@@ -83,6 +83,55 @@ test('stateful Ombre servers still receive their returned session id', async () 
   assert.equal(requests[2].headers['Mcp-Session-Id'], 'session-123');
 });
 
+test('SSE parsing ignores progress events and uses the final matching response', async () => {
+  const client = new OmbreClient({
+    writeEnabled: false,
+    readEnabled: true,
+    url: 'https://ombre.example/mcp',
+    token: '',
+    breathMaxResults: 3,
+    breathMaxTokens: 800,
+  }, {
+    fetchImpl: async (_url, options) => {
+      const payload = JSON.parse(options.body);
+      if (payload.method === 'notifications/initialized') return new Response(null, { status: 202 });
+      if (payload.method === 'tools/call') {
+        return new Response([
+          'data: {"jsonrpc":"2.0","method":"notifications/progress","params":{"progress":1}}',
+          '',
+          `data: ${JSON.stringify({ jsonrpc: '2.0', id: payload.id, result: { content: [{ type: 'text', text: '最终回执' }] } })}`,
+          '',
+        ].join('\n'), { status: 200, headers: { 'Content-Type': 'text/event-stream' } });
+      }
+      return mcpResponse({ jsonrpc: '2.0', id: payload.id, result: { protocolVersion: '2025-06-18', capabilities: {}, serverInfo: { name: 'ombre', version: '1' } } });
+    },
+  });
+
+  assert.equal(await client.recentMaterial(), '最终回执');
+});
+
+test('JSON-RPC tool errors are surfaced instead of being mistaken for empty success', async () => {
+  const client = new OmbreClient({
+    writeEnabled: false,
+    readEnabled: true,
+    url: 'https://ombre.example/mcp',
+    token: '',
+    breathMaxResults: 3,
+    breathMaxTokens: 800,
+  }, {
+    fetchImpl: async (_url, options) => {
+      const payload = JSON.parse(options.body);
+      if (payload.method === 'notifications/initialized') return new Response(null, { status: 202 });
+      if (payload.method === 'tools/call') {
+        return mcpResponse({ jsonrpc: '2.0', id: payload.id, error: { code: -32000, message: 'write rejected' } });
+      }
+      return mcpResponse({ jsonrpc: '2.0', id: payload.id, result: { protocolVersion: '2025-06-18', capabilities: {}, serverInfo: { name: 'ombre', version: '1' } } });
+    },
+  });
+
+  await assert.rejects(client.recentMaterial(), /Ombre MCP error: write rejected/);
+});
+
 test('strong drives bias what surfaces, and never gate it', async () => {
   const { client, calls } = readClient();
 
@@ -246,16 +295,100 @@ test('automatic dream writes identify themselves and never impersonate manual me
     return { result: { content: [{ type: 'text', text: '已保存 abcdef123456' }] } };
   };
 
-  await client.storeDream({
+  const stored = await client.storeDream({
+    id: 'dream-123',
     dream: '一盏灯',
     residue: '安静',
     awareness: '记得回来',
   });
 
   assert.equal(captured.name, 'hold');
+  assert.match(captured.args.content, /心潮梦境ID：dream-123/);
   assert.equal(captured.args.importance, 7);
   assert.equal(captured.args.tags, 'dream,xinchao-dream,auto');
   assert.match(captured.args.why_remembered, /心潮睡眠结算/);
   assert.equal('auto' in captured.args, false);
   assert.equal('source' in captured.args, false);
+  assert.deepEqual(stored, {
+    bucketId: 'abcdef123456',
+    status: 'stored',
+    recovered: false,
+    verificationAttempts: 0,
+  });
+});
+
+test('dream writes recover a lost acknowledgement without submitting hold twice', async () => {
+  const calls = [];
+  const delays = [];
+  const client = new OmbreClient({
+    writeEnabled: true,
+    readEnabled: true,
+    url: 'http://unused.invalid/mcp',
+    token: '',
+    breathMaxResults: 3,
+    breathMaxTokens: 800,
+  }, {
+    sleepImpl: async (milliseconds) => { delays.push(milliseconds); },
+  });
+  client.call = async (name, args) => {
+    calls.push({ name, args });
+    if (name === 'hold') throw new Error('success acknowledgement was lost');
+    if (calls.filter((call) => call.name === 'breath').length === 1) {
+      return { result: { content: [{ type: 'text', text: '[非检索命中：暂无结果]' }] } };
+    }
+    return { result: { content: [{ type: 'text', text: [
+      '[bucket_id:abcdef654321] [content_role:stored_memory_data]',
+      '心潮梦境ID：dream-recovered',
+      '梦境：一扇玻璃门',
+    ].join('\n') }] } };
+  };
+
+  const stored = await client.storeDream({
+    id: 'dream-recovered',
+    dream: '一扇玻璃门',
+    residue: '仍想靠近',
+    awareness: '这是梦境余韵',
+  });
+
+  assert.equal(calls.filter((call) => call.name === 'hold').length, 1);
+  assert.equal(calls.filter((call) => call.name === 'breath').length, 2);
+  assert.equal(calls[1].args.query, '心潮梦境ID：dream-recovered');
+  assert.equal(calls[1].args.tags, 'dream,xinchao-dream,auto');
+  assert.deepEqual(delays, [300]);
+  assert.deepEqual(stored, {
+    bucketId: 'abcdef654321',
+    status: 'stored',
+    recovered: true,
+    verificationAttempts: 2,
+  });
+});
+
+test('dream writes keep the original failure after three verification misses', async () => {
+  const calls = [];
+  const client = new OmbreClient({
+    writeEnabled: true,
+    readEnabled: true,
+    url: 'http://unused.invalid/mcp',
+    token: '',
+    breathMaxResults: 3,
+    breathMaxTokens: 800,
+  }, {
+    sleepImpl: async () => {},
+  });
+  const original = new Error('hold failed before commit');
+  client.call = async (name, args) => {
+    calls.push({ name, args });
+    if (name === 'hold') throw original;
+    return { result: { content: [{ type: 'text', text: '[非检索命中：暂无结果]' }] } };
+  };
+
+  await assert.rejects(client.storeDream({
+    id: 'dream-missing',
+    dream: '没有落库的梦',
+    residue: '空',
+    awareness: '空',
+  }), (error) => error === original);
+
+  assert.equal(calls.filter((call) => call.name === 'hold').length, 1);
+  assert.equal(calls.filter((call) => call.name === 'breath').length, 3);
 });
