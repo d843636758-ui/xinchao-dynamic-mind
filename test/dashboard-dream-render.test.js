@@ -15,6 +15,7 @@ test('private dream cards render every private field instead of choosing only on
   );
   assert.match(source, /OB 精准记忆/);
   assert.match(source, /OB 记忆超出预算/);
+  assert.match(source, /OB 记忆避重复/);
   assert.match(source, /已回存 OB/);
 });
 
