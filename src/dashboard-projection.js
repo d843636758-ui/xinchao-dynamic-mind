@@ -57,7 +57,7 @@ export function projectDreams(state, includePrivateText, limit = 12) {
     const lucidity = dream?.lucidity != null && Number.isFinite(lucidityNumber)
       ? Number(clamp(lucidityNumber).toFixed(4))
       : null;
-    const memoryStatus = ['used_primary', 'used_catalog', 'budget_exhausted', 'empty', 'error', 'disabled']
+    const memoryStatus = ['used_primary', 'used_catalog', 'repeat_avoided', 'budget_exhausted', 'empty', 'error', 'disabled']
       .includes(dream?.memoryStatus) ? dream.memoryStatus : null;
     const memoryChars = Number.isFinite(Number(dream?.memoryChars))
       ? Math.max(0, Math.min(10000, Math.trunc(Number(dream.memoryChars))))
