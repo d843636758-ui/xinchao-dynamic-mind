@@ -229,6 +229,81 @@ test('dream catalog accepts current pinned rows and skips id-only entries', asyn
   assert.equal(calls[2].args.query, '2026-08-05 13-04-19 瓶中生态推进到第85天');
 });
 
+test('dream catalog cools recent themes, excludes stored dreams and selects fresh material', async () => {
+  const { client, calls } = readClient();
+  client.call = async (name, args) => {
+    calls.push({ name, args });
+    if (args.catalog) {
+      return { result: { content: [{ type: 'text', text: [
+        '=== 记忆目录（5 桶）===',
+        '2026-08-11 19-07-00 瓶中世界里的月亮 | 梦境,自省 | 7',
+        '2026-08-05 13-04-19 瓶中生态推进到第85天 | 游戏,自省 | 8',
+        '2026-08-05 10-24-31 Delve下矿初探与瓶中生态攻略 | 游戏,恋爱 | 8',
+        '2026-08-04 14-37-29 初舟小院收获与种植新花种 | 游戏,恋爱 | 8',
+        '2026-08-03 09-00-00 雨后一起看见路灯 | 生活,恋爱 | 7',
+      ].join('\n') }] } };
+    }
+    if (args.query?.includes('初舟小院')) {
+      return { result: { content: [{ type: 'text', text: '小满绕着新花盆走了一圈，我们把刚收获的种子分开放好。' }] } };
+    }
+    return { result: { content: [{ type: 'text', text: '[token 预算不足：请提高 max_tokens 后重试。]' }] } };
+  };
+
+  const material = await client.dreamMaterial([], {
+    excludeMemoryTexts: ['《瓶中生态》的状态、巴西龟、空螺壳，以及陪伴感。'],
+    rotationSeed: 0,
+  });
+
+  assert.equal(material.status, 'used_catalog');
+  assert.match(material.text, /小满/);
+  assert.match(material.memoryKey, /^catalog:/);
+  assert.match(material.memoryTitle, /初舟小院/);
+  assert.equal(calls[2].args.query, '2026-08-04 14-37-29 初舟小院收获与种植新花种');
+  assert.doesNotMatch(calls[2].args.query, /梦境|瓶中生态/);
+});
+
+test('dream catalog reports repeat avoidance instead of reusing the only cooled memory', async () => {
+  const { client, calls } = readClient();
+  client.call = async (name, args) => {
+    calls.push({ name, args });
+    if (args.catalog) {
+      return { result: { content: [{ type: 'text', text: [
+        '=== 记忆目录（2 桶）===',
+        '2026-08-11 19-07-00 刚刚回存的自动梦 | 梦境,心理 | 7',
+        '2026-08-05 13-04-19 瓶中生态推进到第85天 | 游戏,自省 | 8',
+      ].join('\n') }] } };
+    }
+    return { result: { content: [{ type: 'text', text: '[token 预算不足：请提高 max_tokens 后重试。]' }] } };
+  };
+
+  const material = await client.dreamMaterial([], {
+    excludeMemoryTexts: ['醒来仍记得瓶中生态里的巴西龟。'],
+  });
+
+  assert.equal(material.status, 'repeat_avoided');
+  assert.equal(material.text, '');
+  assert.equal(material.memoryKey, null);
+  assert.equal(material.attempts, 2);
+  assert.equal(calls.length, 2);
+});
+
+test('primary dream material uses a stable key and respects its cooldown', async () => {
+  const { client, calls } = readClient();
+  client.call = async (name, args) => {
+    calls.push({ name, args });
+    if (args.catalog) return { result: { content: [{ type: 'text', text: '=== 记忆目录（0 桶）===' }] } };
+    return { result: { content: [{ type: 'text', text: '一起在雨后看见路灯映在水里。' }] } };
+  };
+
+  const first = await client.dreamMaterial();
+  const second = await client.dreamMaterial([], { excludeMemoryKeys: [first.memoryKey] });
+
+  assert.match(first.memoryKey, /^text:[a-f0-9]{20}$/);
+  assert.equal(second.status, 'repeat_avoided');
+  assert.equal(second.text, '');
+  assert.equal(calls.length, 3);
+});
+
 test('dream recall never passes budget or non-match placeholders to the model', async () => {
   const { client } = readClient();
   client.call = async (_name, args) => {
