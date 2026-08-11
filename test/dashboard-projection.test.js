@@ -45,6 +45,8 @@ test('dashboard snapshot is stable and private by default', () => {
     lucidity: 0.72,
     memoryStatus: 'used_catalog',
     memoryChars: 242,
+    memoryKey: 'catalog:不能泄露的内部记忆键',
+    memoryTitle: '不能泄露的内部记忆标题',
     ombreWriteStatus: 'stored',
   });
   const snapshot = buildDashboardSnapshot(state, config(), now);
@@ -65,6 +67,8 @@ test('dashboard snapshot is stable and private by default', () => {
   assert.equal(snapshot.dreams[0].memoryStatus, 'used_catalog');
   assert.equal(snapshot.dreams[0].memoryChars, 242);
   assert.equal(snapshot.dreams[0].ombreWriteStatus, 'stored');
+  assert.equal(snapshot.dreams[0].memoryKey, undefined);
+  assert.equal(snapshot.dreams[0].memoryTitle, undefined);
   assert.equal(snapshot.dreams[0].dream, undefined);
   assert.equal(snapshot.dreams[0].residue, undefined);
   assert.doesNotMatch(raw, /不能泄露/);
@@ -88,6 +92,23 @@ test('private dream text is an explicit bounded opt-in', () => {
   assert.equal(snapshot.dreams[0].summary, '醒来仍记得门上的光');
   assert.equal(snapshot.dreams[0].residue, '留下的余韵');
   assert.equal(snapshot.dreams[0].lucidity, 0.81);
+});
+
+test('dashboard preserves the repeat-avoided memory status', () => {
+  const state = newState();
+  state.recentDreams.push({
+    id: 'dream-repeat-avoided',
+    createdAt: new Date().toISOString(),
+    source: 'model',
+    memoryStatus: 'repeat_avoided',
+    memoryChars: 0,
+    ombreWriteStatus: 'stored',
+  });
+
+  const snapshot = buildDashboardSnapshot(state, config());
+
+  assert.equal(snapshot.dreams[0].memoryStatus, 'repeat_avoided');
+  assert.equal(snapshot.dreams[0].memoryChars, 0);
 });
 
 test('connection manifest supports different clients without returning secrets', () => {
