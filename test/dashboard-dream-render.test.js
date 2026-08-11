@@ -1,6 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
+
+test('dashboard browser script is syntactically valid', () => {
+  const scriptPath = fileURLToPath(new URL('../public/dashboard.js', import.meta.url));
+  const result = spawnSync(process.execPath, ['--check', scriptPath], { encoding: 'utf8' });
+
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+});
 
 test('private dream cards render every private field instead of choosing only one', async () => {
   const source = await readFile(new URL('../public/dashboard.js', import.meta.url), 'utf8');
