@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 export class OmbreClient {
   constructor(config, { fetchImpl = globalThis.fetch, sleepImpl = sleep } = {}) {
     this.config = config;
@@ -77,16 +79,18 @@ export class OmbreClient {
     return extractText(result).slice(0, 10000);
   }
 
-  async dreamMaterial(drives = []) {
+  async dreamMaterial(drives = [], options = {}) {
+    const cooldown = dreamMemoryCooldown(options);
     const primaryRaw = extractText(await this.call('breath', {
       query: withDriveHint('近期重要记忆、情绪、关系变化和未完成事项', drives),
       max_results: this.config.breathMaxResults,
       max_tokens: this.config.breathMaxTokens,
     })).slice(0, 10000);
     const primary = cleanDreamMaterial(primaryRaw);
+    const primaryKey = primary ? memoryTextKey(primary) : null;
 
-    if (usableDreamMaterial(primary)) {
-      return dreamMaterialResult(primary, 'used_primary', 1);
+    if (usableDreamMaterial(primary) && !cooldown.keys.has(primaryKey)) {
+      return dreamMaterialResult(primary, 'used_primary', 1, { memoryKey: primaryKey });
     }
 
     const catalog = extractText(await this.call('breath', {
@@ -96,19 +100,26 @@ export class OmbreClient {
       max_results: 50,
       max_tokens: 3000,
     })).slice(0, 16000);
-    const title = selectDreamCatalogTitle(catalog);
-    if (!title) {
-      return dreamMaterialResult('', recallFailureStatus(primaryRaw), 2);
+    const selection = selectDreamCatalogEntry(catalog, cooldown);
+    if (!selection.entry) {
+      const repeatedPrimary = usableDreamMaterial(primary) && cooldown.keys.has(primaryKey);
+      const status = repeatedPrimary || selection.cooledOut
+        ? 'repeat_avoided'
+        : recallFailureStatus(primaryRaw);
+      return dreamMaterialResult('', status, 2);
     }
 
     const focusedRaw = extractText(await this.call('breath', {
-      query: title,
+      query: selection.entry.title,
       max_results: 1,
       max_tokens: 3000,
     })).slice(0, 10000);
     const focused = cleanDreamMaterial(focusedRaw);
     if (usableDreamMaterial(focused)) {
-      return dreamMaterialResult(focused, 'used_catalog', 3);
+      return dreamMaterialResult(focused, 'used_catalog', 3, {
+        memoryKey: selection.entry.key,
+        memoryTitle: selection.entry.title,
+      });
     }
     return dreamMaterialResult('', recallFailureStatus(focusedRaw || primaryRaw), 3);
   }
@@ -228,10 +239,12 @@ function withDriveHint(base, drives) {
 
 const DRIVE_HINT_MIN = 0.5;
 const DRIVE_HINT_MAX_LABELS = 3;
+const DREAM_MEMORY_FRAGMENT_MIN = 4;
 const DREAM_WRITE_VERIFY_ATTEMPTS = 3;
 const DREAM_WRITE_VERIFY_DELAYS_MS = [300, 900];
 const DREAM_MEMORY_PLACEHOLDER = /token\s*预算不足|预算不足[^\n]*max_tokens|非检索命中/i;
 const TECHNICAL_MEMORY = /心潮|dashboard|openrouter|mcp|oauth|token|部署|代码|编程|接口|配置|修复|测试|日志|zeabur/i;
+const STORED_DREAM_MEMORY = /梦境|xinchao-dream|心潮梦境id/i;
 const MEMORY_ENVELOPE_LINE = /^\[bucket_id:[^\]]+\](?:\s+\[[^\]]+\])+\s*$/i;
 const MEMORY_FOOTPRINT_LINE = /^👣\s*Footprint[：:].*$/i;
 
@@ -260,17 +273,19 @@ function recallFailureStatus(value) {
     : 'empty';
 }
 
-function dreamMaterialResult(text, status, attempts) {
+function dreamMaterialResult(text, status, attempts, memory = {}) {
   const clean = String(text ?? '').trim();
   return {
     text: clean,
     status,
     chars: Array.from(clean).length,
     attempts,
+    memoryKey: String(memory.memoryKey ?? '').trim() || null,
+    memoryTitle: String(memory.memoryTitle ?? '').trim() || null,
   };
 }
 
-function selectDreamCatalogTitle(value) {
+function selectDreamCatalogEntry(value, cooldown) {
   const candidates = String(value ?? '').split('\n').flatMap((line) => {
     // Current Ombre prefixes pinned rows with a pin glyph. Older versions
     // emitted the same row without it. ID-only rows intentionally do not
@@ -279,11 +294,60 @@ function selectDreamCatalogTitle(value) {
     if (!match) return [];
     const title = `${match[1]} ${match[2]}`.trim();
     const classification = `${match[2]} ${match[3]}`;
-    if (!match[2].trim() || TECHNICAL_MEMORY.test(classification)) return [];
-    return [{ timestamp: match[1], title }];
+    if (!match[2].trim() || TECHNICAL_MEMORY.test(classification) || STORED_DREAM_MEMORY.test(classification)) return [];
+    return [{
+      timestamp: match[1],
+      name: match[2].trim(),
+      title,
+      key: `catalog:${title}`,
+    }];
   });
   candidates.sort((left, right) => right.timestamp.localeCompare(left.timestamp));
-  return candidates[0]?.title ?? '';
+  const eligible = candidates.filter((candidate) => (
+    !cooldown.keys.has(candidate.key)
+    && !cooldown.texts.some((text) => sharesMeaningfulFragment(candidate.name, text))
+  ));
+  if (!eligible.length) return { entry: null, cooledOut: candidates.length > 0 };
+  const index = positiveModulo(cooldown.rotationSeed, eligible.length);
+  return { entry: eligible[index], cooledOut: false };
+}
+
+function dreamMemoryCooldown(options = {}) {
+  const keys = new Set((Array.isArray(options.excludeMemoryKeys) ? options.excludeMemoryKeys : [])
+    .map((value) => String(value ?? '').trim())
+    .filter(Boolean));
+  const texts = (Array.isArray(options.excludeMemoryTexts) ? options.excludeMemoryTexts : [])
+    .map((value) => normalizeMemoryText(value))
+    .filter(Boolean);
+  const seed = Number(options.rotationSeed);
+  return {
+    keys,
+    texts,
+    rotationSeed: Number.isFinite(seed) ? Math.trunc(seed) : 0,
+  };
+}
+
+function memoryTextKey(value) {
+  return `text:${createHash('sha256').update(String(value ?? ''), 'utf8').digest('hex').slice(0, 20)}`;
+}
+
+function sharesMeaningfulFragment(title, normalizedRecentText) {
+  const normalizedTitle = normalizeMemoryText(title);
+  if (!normalizedTitle || !normalizedRecentText) return false;
+  if (Math.min(normalizedTitle.length, normalizedRecentText.length) < DREAM_MEMORY_FRAGMENT_MIN) return false;
+  if (normalizedRecentText.includes(normalizedTitle) || normalizedTitle.includes(normalizedRecentText)) return true;
+  for (let index = 0; index <= normalizedTitle.length - DREAM_MEMORY_FRAGMENT_MIN; index += 1) {
+    if (normalizedRecentText.includes(normalizedTitle.slice(index, index + DREAM_MEMORY_FRAGMENT_MIN))) return true;
+  }
+  return false;
+}
+
+function normalizeMemoryText(value) {
+  return String(value ?? '').toLowerCase().replace(/[\s\p{P}\p{S}]+/gu, '');
+}
+
+function positiveModulo(value, divisor) {
+  return ((value % divisor) + divisor) % divisor;
 }
 
 function parseMcp(text, expectedId = null) {
