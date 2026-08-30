@@ -39,7 +39,7 @@ const bridgeQueue = new BridgeQueue(config.bridge.statePath, config.bridge);
 const bridgeStreams = new Set();
 await oauth.init();
 let cyclePromise = null;
-const SYSTEM_VERSION = '2.9.1';
+const SYSTEM_VERSION = '2.9.2';
 const DASHBOARD_ASSETS = new Map(await Promise.all([
   ['/dashboard', 'dashboard.html', 'text/html; charset=utf-8'],
   ['/dashboard/', 'dashboard.html', 'text/html; charset=utf-8'],

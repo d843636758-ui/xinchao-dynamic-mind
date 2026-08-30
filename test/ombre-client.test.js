@@ -229,6 +229,33 @@ test('dream catalog accepts current pinned rows and skips id-only entries', asyn
   assert.equal(calls[2].args.query, '2026-08-05 13-04-19 瓶中生态推进到第85天');
 });
 
+test('dream catalog accepts Ombre 3.6 metadata rows and searches by their title', async () => {
+  const { client, calls } = readClient();
+  client.call = async (name, args) => {
+    calls.push({ name, args });
+    if (args.catalog) {
+      return { result: { content: [{ type: 'text', text: [
+        '=== 记忆目录（3 桶）===',
+        '📌 [584439b74254] 《OpenRouter 配置修复》 主题:编程,AI 情感:平静 重要:10',
+        '💭 [abcdef123456] 《雨后一起看见路灯》 主题:生活,恋爱 情感:安心 重要:8',
+      ].join('\n') }] } };
+    }
+    if (args.query === '雨后一起看见路灯') {
+      return { result: { content: [{ type: 'text', text: '雨停以后，我们看见路灯映在水里。' }] } };
+    }
+    return { result: { content: [{ type: 'text', text: '[非检索命中：暂无结果]' }] } };
+  };
+
+  const material = await client.dreamMaterial();
+
+  assert.equal(material.status, 'used_catalog');
+  assert.equal(material.memoryKey, 'catalog:abcdef123456');
+  assert.equal(material.memoryTitle, '雨后一起看见路灯');
+  assert.equal(calls[1].name, 'breath_advanced');
+  assert.equal(calls[2].name, 'breath_search');
+  assert.equal(calls[2].args.query, '雨后一起看见路灯');
+});
+
 test('dream catalog cools recent themes, excludes stored dreams and selects fresh material', async () => {
   const { client, calls } = readClient();
   client.call = async (name, args) => {
@@ -349,7 +376,7 @@ test('autonomous thought recall stays smaller than daytime recall', async () => 
   await client.thoughtMaterial([{ key: 'crave', label: '渴求', value: 0.8 }]);
 
   const { args } = calls[0];
-  assert.equal(args.name ?? calls[0].name, 'breath');
+  assert.equal(args.name ?? calls[0].name, 'breath_advanced');
   assert.ok(args.max_results <= 3);
   assert.ok(args.max_tokens <= 600);
   assert.match(args.query, /渴求/);
@@ -365,8 +392,8 @@ test('automatic dream writes identify themselves and never impersonate manual me
     breathMaxTokens: 800,
   });
   let captured;
-  client.call = async (name, args) => {
-    captured = { name, args };
+  client.call = async (name, args, options) => {
+    captured = { name, args, options };
     return { result: { content: [{ type: 'text', text: '已保存 abcdef123456' }] } };
   };
 
@@ -381,6 +408,7 @@ test('automatic dream writes identify themselves and never impersonate manual me
   assert.match(captured.args.content, /心潮梦境ID：dream-123/);
   assert.equal(captured.args.importance, 7);
   assert.equal(captured.args.tags, 'dream,xinchao-dream,auto');
+  assert.equal(captured.options.timeoutMs, 60000);
   assert.match(captured.args.why_remembered, /心潮睡眠结算/);
   assert.equal('auto' in captured.args, false);
   assert.equal('source' in captured.args, false);
@@ -408,7 +436,7 @@ test('dream writes recover a lost acknowledgement without submitting hold twice'
   client.call = async (name, args) => {
     calls.push({ name, args });
     if (name === 'hold') throw new Error('success acknowledgement was lost');
-    if (calls.filter((call) => call.name === 'breath').length === 1) {
+    if (calls.filter((call) => call.name === 'breath_search').length === 1) {
       return { result: { content: [{ type: 'text', text: '[非检索命中：暂无结果]' }] } };
     }
     return { result: { content: [{ type: 'text', text: [
@@ -426,9 +454,10 @@ test('dream writes recover a lost acknowledgement without submitting hold twice'
   });
 
   assert.equal(calls.filter((call) => call.name === 'hold').length, 1);
-  assert.equal(calls.filter((call) => call.name === 'breath').length, 2);
+  assert.equal(calls.filter((call) => call.name === 'breath_search').length, 2);
+  assert.equal(calls[1].name, 'breath_search');
   assert.equal(calls[1].args.query, '心潮梦境ID：dream-recovered');
-  assert.equal(calls[1].args.tags, 'dream,xinchao-dream,auto');
+  assert.equal('tags' in calls[1].args, false);
   assert.deepEqual(delays, [300]);
   assert.deepEqual(stored, {
     bucketId: 'abcdef654321',
@@ -465,5 +494,17 @@ test('dream writes keep the original failure after three verification misses', a
   }), (error) => error === original);
 
   assert.equal(calls.filter((call) => call.name === 'hold').length, 1);
-  assert.equal(calls.filter((call) => call.name === 'breath').length, 3);
+  assert.equal(calls.filter((call) => call.name === 'breath_search').length, 3);
+});
+
+test('Ombre 3.6 recall falls back to legacy breath only when the new tool is unavailable', async () => {
+  const { client, calls } = readClient();
+  client.call = async (name, args) => {
+    calls.push({ name, args });
+    if (name === 'breath_advanced') throw new Error('Ombre MCP error: Unknown tool: breath_advanced');
+    return { result: { content: [{ type: 'text', text: '旧版读取仍可用' }] } };
+  };
+
+  assert.equal(await client.recentMaterial(), '旧版读取仍可用');
+  assert.deepEqual(calls.map((call) => call.name), ['breath_advanced', 'breath']);
 });

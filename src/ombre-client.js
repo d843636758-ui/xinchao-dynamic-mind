@@ -10,7 +10,7 @@ export class OmbreClient {
     this.initializePromise = null;
   }
 
-  async post(payload, expectBody = true) {
+  async post(payload, expectBody = true, timeoutMs = OMBRE_READ_TIMEOUT_MS) {
     const headers = {
       'Content-Type': 'application/json',
       Accept: 'application/json, text/event-stream',
@@ -21,7 +21,7 @@ export class OmbreClient {
     const response = await this.fetch(this.config.url, {
       method: 'POST', headers,
       body: JSON.stringify(payload),
-      signal: AbortSignal.timeout(15000)
+      signal: AbortSignal.timeout(timeoutMs)
     });
     if (!response.ok) throw new Error(`Ombre MCP failed: HTTP ${response.status}`);
     this.sessionId = response.headers.get('mcp-session-id') ?? this.sessionId;
@@ -41,7 +41,7 @@ export class OmbreClient {
           params: {
             protocolVersion: '2025-06-18',
             capabilities: {},
-            clientInfo: { name: 'xinchao-dynamic-mind', version: '2.9.1' },
+            clientInfo: { name: 'xinchao-dynamic-mind', version: '2.9.2' },
           },
         });
         await this.post({ jsonrpc: '2.0', method: 'notifications/initialized' }, false);
@@ -54,11 +54,15 @@ export class OmbreClient {
     return this.initializePromise;
   }
 
-  async call(name, args = {}) {
+  async call(name, args = {}, { timeoutMs = OMBRE_READ_TIMEOUT_MS } = {}) {
     for (let attempt = 0; attempt < 2; attempt += 1) {
       await this.initialize();
       try {
-        const response = await this.post({ jsonrpc: '2.0', id: Date.now(), method: 'tools/call', params: { name, arguments: args } });
+        const response = await this.post(
+          { jsonrpc: '2.0', id: Date.now(), method: 'tools/call', params: { name, arguments: args } },
+          true,
+          timeoutMs,
+        );
         if (response?.error) throw new Error(`Ombre MCP error: ${mcpErrorMessage(response.error)}`);
         return response;
       } catch (error) {
@@ -70,21 +74,39 @@ export class OmbreClient {
     throw new Error('Ombre MCP call failed after session refresh');
   }
 
+  // Ombre 3.6 split the old overloaded `breath` tool into explicit search
+  // and advanced tools. Keep a narrow fallback so a rolling Zeabur deploy
+  // can still talk to an older OB instance without hiding real read errors.
+  async recall(name, args, legacyArgs = args) {
+    try {
+      return await this.call(name, args);
+    } catch (error) {
+      if (!isUnknownToolError(error)) throw error;
+      return this.call('breath', legacyArgs);
+    }
+  }
+
   async recentMaterial(drives = []) {
-    const result = await this.call('breath', {
+    const args = {
       query: withDriveHint('近期重要记忆、情绪、关系变化和未完成事项', drives),
       max_results: this.config.breathMaxResults,
       max_tokens: this.config.breathMaxTokens
-    });
+    };
+    const result = await this.recall('breath_advanced', args);
     return extractText(result).slice(0, 10000);
   }
 
   async dreamMaterial(drives = [], options = {}) {
     const cooldown = dreamMemoryCooldown(options);
-    const primaryRaw = extractText(await this.call('breath', {
-      query: withDriveHint('近期重要记忆、情绪、关系变化和未完成事项', drives),
+    const primaryQuery = withDriveHint('近期重要记忆、情绪、关系变化和未完成事项', drives);
+    const primaryRaw = extractText(await this.recall('breath_search', {
+      query: primaryQuery,
       max_results: this.config.breathMaxResults,
-      max_tokens: this.config.breathMaxTokens,
+    }, {
+      query: primaryQuery,
+      max_results: this.config.breathMaxResults,
+      // The old 800-token default could not admit one complete memory bucket.
+      max_tokens: Math.max(DREAM_RECALL_MIN_TOKENS, Number(this.config.breathMaxTokens) || 0),
     })).slice(0, 10000);
     const primary = cleanDreamMaterial(primaryRaw);
     const primaryKey = primary ? memoryTextKey(primary) : null;
@@ -93,13 +115,14 @@ export class OmbreClient {
       return dreamMaterialResult(primary, 'used_primary', 1, { memoryKey: primaryKey });
     }
 
-    const catalog = extractText(await this.call('breath', {
+    const catalogArgs = {
       catalog: true,
       // Pinned buckets are listed first. Fetch the server maximum so a full
       // pinned section cannot hide every recent dynamic memory.
       max_results: 50,
-      max_tokens: 3000,
-    })).slice(0, 16000);
+      max_tokens: 6000,
+    };
+    const catalog = extractText(await this.recall('breath_advanced', catalogArgs)).slice(0, 24000);
     const selection = selectDreamCatalogEntry(catalog, cooldown);
     if (!selection.entry) {
       const repeatedPrimary = usableDreamMaterial(primary) && cooldown.keys.has(primaryKey);
@@ -109,7 +132,10 @@ export class OmbreClient {
       return dreamMaterialResult('', status, 2);
     }
 
-    const focusedRaw = extractText(await this.call('breath', {
+    const focusedRaw = extractText(await this.recall('breath_search', {
+      query: selection.entry.title,
+      max_results: 1,
+    }, {
       query: selection.entry.title,
       max_results: 1,
       max_tokens: 3000,
@@ -125,26 +151,28 @@ export class OmbreClient {
   }
 
   async daytimeMaterial(drives = []) {
-    const result = await this.call('breath', {
+    const args = {
       query: withDriveHint('白天自然浮现的近期记忆、具体细节、未说完的话和当下牵挂；不要返回系统配置或技术信息', drives),
       max_results: this.config.breathMaxResults,
       max_tokens: this.config.breathMaxTokens
-    });
+    };
+    const result = await this.recall('breath_advanced', args);
     return extractText(result).slice(0, 10000);
   }
 
   // 自主念头用的材料：比日间浮现更短，只要能让念头落到具体的事上。
   async thoughtMaterial(drives = []) {
-    const result = await this.call('breath', {
+    const args = {
       query: withDriveHint('此刻自然想起的一件具体的事：最近的共同经历、说过的话或还惦记着的东西；不要返回系统配置、部署或技术信息', drives),
       max_results: Math.max(1, Math.min(3, Number(this.config.breathMaxResults) || 2)),
       max_tokens: Math.max(200, Math.min(600, Number(this.config.breathMaxTokens) || 400))
-    });
+    };
+    const result = await this.recall('breath_advanced', args);
     return extractText(result).slice(0, 4000);
   }
 
   async recentContinuityMaterial(maxTokens = this.config.breathMaxTokens) {
-    const result = await this.call('breath', {
+    const args = {
       query: [
         '新窗口近期连续性：只返回最近发生了什么，以及仍直接影响现在的人物与关系变化、生活重点和未完成约定。',
         '不要返回核心准则、自我基岩或长期画像；这些由客户端从自己的核心指令和长期记忆单独完整读取。',
@@ -152,7 +180,8 @@ export class OmbreClient {
       ].join(''),
       max_results: Math.max(3, Math.min(8, Number(this.config.breathMaxResults) || 3)),
       max_tokens: Math.max(200, Math.min(3000, Number(maxTokens) || 1600)),
-    });
+    };
+    const result = await this.recall('breath_advanced', args);
     return extractText(result).slice(0, 16000);
   }
 
@@ -179,7 +208,7 @@ export class OmbreClient {
         tags: 'dream,xinchao-dream,auto',
         importance: 7,
         why_remembered: '由心潮睡眠结算自动生成并回存的梦境记录',
-      });
+      }, { timeoutMs: OMBRE_WRITE_TIMEOUT_MS });
       return dreamStorageResult(extractBucketId(extractText(result)));
     } catch (error) {
       // A write may commit before its HTTP/SSE acknowledgement is lost. Never
@@ -203,7 +232,10 @@ export class OmbreClient {
     for (let attempt = 1; attempt <= DREAM_WRITE_VERIFY_ATTEMPTS; attempt += 1) {
       if (attempt > 1) await this.sleep(DREAM_WRITE_VERIFY_DELAYS_MS[attempt - 2]);
       try {
-        const result = await this.call('breath', {
+        const result = await this.recall('breath_search', {
+          query: marker,
+          max_results: 1,
+        }, {
           query: marker,
           tags: 'dream,xinchao-dream,auto',
           max_results: 1,
@@ -240,8 +272,11 @@ function withDriveHint(base, drives) {
 const DRIVE_HINT_MIN = 0.5;
 const DRIVE_HINT_MAX_LABELS = 3;
 const DREAM_MEMORY_FRAGMENT_MIN = 4;
+const DREAM_RECALL_MIN_TOKENS = 3000;
 const DREAM_WRITE_VERIFY_ATTEMPTS = 3;
 const DREAM_WRITE_VERIFY_DELAYS_MS = [300, 900];
+const OMBRE_READ_TIMEOUT_MS = 15000;
+const OMBRE_WRITE_TIMEOUT_MS = 60000;
 const DREAM_MEMORY_PLACEHOLDER = /token\s*预算不足|预算不足[^\n]*max_tokens|非检索命中/i;
 const TECHNICAL_MEMORY = /心潮|dashboard|openrouter|mcp|oauth|token|部署|代码|编程|接口|配置|修复|测试|日志|zeabur/i;
 const STORED_DREAM_MEMORY = /梦境|xinchao-dream|心潮梦境id/i;
@@ -287,19 +322,15 @@ function dreamMaterialResult(text, status, attempts, memory = {}) {
 
 function selectDreamCatalogEntry(value, cooldown) {
   const candidates = String(value ?? '').split('\n').flatMap((line) => {
-    // Current Ombre prefixes pinned rows with a pin glyph. Older versions
-    // emitted the same row without it. ID-only rows intentionally do not
-    // match because they provide no useful query title.
-    const match = line.match(/^[^\d]*(\d{4}-\d{2}-\d{2}\s+\d{2}-\d{2}-\d{2})\s+(.+?)\s+\|\s+(.+?)\s+\|\s+\d+\s*$/u);
-    if (!match) return [];
-    const title = `${match[1]} ${match[2]}`.trim();
-    const classification = `${match[2]} ${match[3]}`;
-    if (!match[2].trim() || TECHNICAL_MEMORY.test(classification) || STORED_DREAM_MEMORY.test(classification)) return [];
+    const parsed = parseCatalogLine(line);
+    if (!parsed) return [];
+    const { id, timestamp, name, title, classification } = parsed;
+    if (!name || TECHNICAL_MEMORY.test(classification) || STORED_DREAM_MEMORY.test(classification)) return [];
     return [{
-      timestamp: match[1],
-      name: match[2].trim(),
+      timestamp,
+      name,
       title,
-      key: `catalog:${title}`,
+      key: `catalog:${id || title}`,
     }];
   });
   candidates.sort((left, right) => right.timestamp.localeCompare(left.timestamp));
@@ -310,6 +341,37 @@ function selectDreamCatalogEntry(value, cooldown) {
   if (!eligible.length) return { entry: null, cooledOut: candidates.length > 0 };
   const index = positiveModulo(cooldown.rotationSeed, eligible.length);
   return { entry: eligible[index], cooledOut: false };
+}
+
+function parseCatalogLine(line) {
+  // Ombre <=3.5: `📌2026-08-05 13-04-19 标题 | 标签 | 8`
+  const legacy = String(line).match(/^[^\d]*(\d{4}-\d{2}-\d{2}\s+\d{2}-\d{2}-\d{2})\s+(.+?)\s+\|\s+(.+?)\s+\|\s+\d+\s*$/u);
+  if (legacy) {
+    const name = legacy[2].trim();
+    return {
+      id: null,
+      timestamp: legacy[1],
+      name,
+      title: `${legacy[1]} ${name}`,
+      classification: `${name} ${legacy[3]}`,
+    };
+  }
+
+  // Ombre 3.6+: `📌 [bucket-id] 《标题》 主题:... 情感:... 重要:8`
+  // Some deployments omit 《》, so keep the metadata labels as the boundary.
+  const current = String(line).match(/^[^\[]*\[([a-f0-9]{12,})\]\s+(?:《([^》]+)》|(.+?))\s+(主题:.*)$/iu);
+  if (!current) return null;
+  const name = String(current[2] ?? current[3] ?? '').trim();
+  if (!name) return null;
+  const timestamp = name.match(/\d{4}-\d{2}-\d{2}(?:\s+\d{2}[-:]\d{2}[-:]\d{2})?/)?.[0]
+    ?.replaceAll(':', '-') ?? '';
+  return {
+    id: current[1].toLowerCase(),
+    timestamp,
+    name,
+    title: name,
+    classification: `${name} ${current[4]}`,
+  };
 }
 
 function dreamMemoryCooldown(options = {}) {
@@ -398,6 +460,10 @@ function mcpErrorMessage(error) {
   if (typeof error?.message === 'string' && error.message.trim()) return error.message.trim();
   if (typeof error === 'string' && error.trim()) return error.trim();
   return 'unknown JSON-RPC error';
+}
+
+function isUnknownToolError(error) {
+  return /unknown tool|tool[^\n]*(?:not found|does not exist)|method not found/i.test(String(error?.message ?? error ?? ''));
 }
 
 function sleep(milliseconds) {
