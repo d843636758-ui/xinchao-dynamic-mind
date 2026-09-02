@@ -135,10 +135,11 @@ async function runCycle() {
       let memoryChars = 0;
       let memoryAttempts = 0;
       let memoryKey = null;
+      let memoryId = null;
       let memoryTitle = null;
       if (!config.shadowMode && config.ombre.readEnabled) {
         try {
-          const recentDreams = Array.isArray(state.recentDreams) ? state.recentDreams.slice(-6) : [];
+          const recentDreams = Array.isArray(state.recentDreams) ? state.recentDreams.slice(-5) : [];
           const recalled = await ombre.dreamMaterial(topDrives(state), {
             excludeMemoryKeys: recentDreams.map((dream) => dream.memoryKey).filter(Boolean),
             excludeMemoryTexts: recentDreams.flatMap((dream) => [
@@ -153,6 +154,7 @@ async function runCycle() {
           memoryChars = recalled.chars;
           memoryAttempts = recalled.attempts;
           memoryKey = recalled.memoryKey;
+          memoryId = recalled.memoryId;
           memoryTitle = recalled.memoryTitle;
         } catch (error) {
           memoryStatus = 'error';
@@ -180,6 +182,7 @@ async function runCycle() {
         memoryChars,
         memoryAttempts,
         memoryKey,
+        memoryId,
         memoryTitle,
         ombreBucketId: null,
         ombreWriteStatus: config.shadowMode || !config.ombre.writeEnabled ? 'disabled' : 'pending',

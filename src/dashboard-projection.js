@@ -76,6 +76,8 @@ export function projectDreams(state, includePrivateText, limit = 12) {
       lucidity,
       memoryStatus,
       memoryChars,
+      memoryId: compact(dream?.memoryId, 120) || null,
+      ombreBucketId: compact(dream?.ombreBucketId, 120) || null,
       ombreWriteStatus,
       ...(includePrivateText ? {
         dream: compact(dream?.dream, 4000) || null,

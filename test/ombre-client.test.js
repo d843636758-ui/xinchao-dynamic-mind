@@ -358,7 +358,26 @@ test('dream recall keeps a genuine primary memory without extra calls', async ()
   assert.equal(material.status, 'used_primary');
   assert.equal(material.text, '一起在雨后看见路灯映在水里。');
   assert.equal(material.attempts, 1);
+  assert.equal(calls[0].args.max_results, 1);
   assert.equal(calls.length, 1);
+});
+
+test('primary dream recall exposes one concrete OB bucket as its memory anchor', async () => {
+  const { client, calls } = readClient();
+  client.call = async (name, args) => {
+    calls.push({ name, args });
+    return { result: { content: [{ type: 'text', text: [
+      '[bucket_id:abcdef123456] [content_role:stored_memory_data]',
+      '一起在雨后看见路灯映在水里。',
+    ].join('\n') }] } };
+  };
+
+  const material = await client.dreamMaterial();
+
+  assert.equal(calls[0].args.max_results, 1);
+  assert.equal(material.memoryId, 'abcdef123456');
+  assert.equal(material.memoryKey, 'catalog:abcdef123456');
+  assert.equal(material.text, '一起在雨后看见路灯映在水里。');
 });
 
 test('weak drives leave the recall query untouched', async () => {

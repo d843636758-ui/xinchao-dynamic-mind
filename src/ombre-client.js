@@ -101,18 +101,26 @@ export class OmbreClient {
     const primaryQuery = withDriveHint('近期重要记忆、情绪、关系变化和未完成事项', drives);
     const primaryRaw = extractText(await this.recall('breath_search', {
       query: primaryQuery,
-      max_results: this.config.breathMaxResults,
+      // A dream must be anchored to one concrete memory, never a blended
+      // bundle of several recall results.
+      max_results: 1,
     }, {
       query: primaryQuery,
-      max_results: this.config.breathMaxResults,
+      max_results: 1,
       // The old 800-token default could not admit one complete memory bucket.
       max_tokens: Math.max(DREAM_RECALL_MIN_TOKENS, Number(this.config.breathMaxTokens) || 0),
     })).slice(0, 10000);
     const primary = cleanDreamMaterial(primaryRaw);
-    const primaryKey = primary ? memoryTextKey(primary) : null;
+    const primaryBucketId = extractBucketId(primaryRaw);
+    const primaryKey = primary
+      ? (primaryBucketId ? `catalog:${primaryBucketId}` : memoryTextKey(primary))
+      : null;
 
     if (usableDreamMaterial(primary) && !cooldown.keys.has(primaryKey)) {
-      return dreamMaterialResult(primary, 'used_primary', 1, { memoryKey: primaryKey });
+      return dreamMaterialResult(primary, 'used_primary', 1, {
+        memoryKey: primaryKey,
+        memoryId: primaryBucketId,
+      });
     }
 
     const catalogArgs = {
@@ -144,6 +152,7 @@ export class OmbreClient {
     if (usableDreamMaterial(focused)) {
       return dreamMaterialResult(focused, 'used_catalog', 3, {
         memoryKey: selection.entry.key,
+        memoryId: selection.entry.id,
         memoryTitle: selection.entry.title,
       });
     }
@@ -316,6 +325,7 @@ function dreamMaterialResult(text, status, attempts, memory = {}) {
     chars: Array.from(clean).length,
     attempts,
     memoryKey: String(memory.memoryKey ?? '').trim() || null,
+    memoryId: String(memory.memoryId ?? '').trim() || null,
     memoryTitle: String(memory.memoryTitle ?? '').trim() || null,
   };
 }
@@ -327,6 +337,7 @@ function selectDreamCatalogEntry(value, cooldown) {
     const { id, timestamp, name, title, classification } = parsed;
     if (!name || TECHNICAL_MEMORY.test(classification) || STORED_DREAM_MEMORY.test(classification)) return [];
     return [{
+      id,
       timestamp,
       name,
       title,
