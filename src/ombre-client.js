@@ -356,7 +356,12 @@ function selectDreamCatalogEntry(value, cooldown) {
 
 function parseCatalogLine(line) {
   // Ombre <=3.5: `📌2026-08-05 13-04-19 标题 | 标签 | 8`
-  const legacy = String(line).match(/^[^\d]*(\d{4}-\d{2}-\d{2}\s+\d{2}-\d{2}-\d{2})\s+(.+?)\s+\|\s+(.+?)\s+\|\s+\d+\s*$/u);
+  // Ombre 3.6 may append footprint/relation metadata after importance, e.g.
+  // `... | 恋爱,音乐 | 10 | 👣 Footprint：... | ↳ 相关 → ...`.
+  // Treat that tail as transport metadata rather than rejecting the whole
+  // catalog row; otherwise every current dynamic row disappears and the
+  // caller incorrectly reports repeat_avoided despite thousands of buckets.
+  const legacy = String(line).match(/^[^\d]*(\d{4}-\d{2}-\d{2}\s+\d{2}-\d{2}-\d{2})\s+(.+?)\s+\|\s+(.+?)\s+\|\s+\d+(?:\s+\|.*)?\s*$/u);
   if (legacy) {
     const name = legacy[2].trim();
     return {
