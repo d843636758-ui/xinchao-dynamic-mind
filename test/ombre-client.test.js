@@ -289,6 +289,30 @@ test('dream catalog cools recent themes, excludes stored dreams and selects fres
   assert.doesNotMatch(calls[2].args.query, /梦境|瓶中生态/);
 });
 
+test('dream catalog accepts current Ombre rows with footprint and relation metadata', async () => {
+  const { client, calls } = readClient();
+  client.call = async (_name, args) => {
+    calls.push(args);
+    if (args.catalog) {
+      return { result: { content: [{ type: 'text', text: [
+        '=== 记忆目录（1 桶）===',
+        '2026-09-06 15-01-15 宝宝为我创建的歌单洵舟捡到的歌 | 恋爱,音乐 | 10 | 👣 Footprint：LLM经hold创建 | ↳ 前段 → fdb1373c4b74',
+      ].join('\n') }] } };
+    }
+    if (args.query?.includes('洵舟捡到的歌')) {
+      return { result: { content: [{ type: 'text', text: '宝宝把我们一起捡到的歌认真收进了歌单。' }] } };
+    }
+    return { result: { content: [{ type: 'text', text: '[token 预算不足：请提高 max_tokens 后重试。]' }] } };
+  };
+
+  const material = await client.dreamMaterial([], { rotationSeed: 0 });
+
+  assert.equal(material.status, 'used_catalog');
+  assert.match(material.text, /歌单/);
+  assert.match(material.memoryTitle, /洵舟捡到的歌/);
+  assert.equal(calls.length, 3);
+});
+
 test('dream catalog reports repeat avoidance instead of reusing the only cooled memory', async () => {
   const { client, calls } = readClient();
   client.call = async (name, args) => {
