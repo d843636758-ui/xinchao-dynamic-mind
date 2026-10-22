@@ -1,4 +1,29 @@
-# Zeabur 与现有 MCP 接入
+# Zeabur、阿里云与现有 MCP 接入
+
+## 0. 从 Zeabur 迁移到阿里云
+
+心潮的生产持久目录是 `/app/state`。迁移时先保留旧服务，停止旧容器写入后完整
+复制该目录到阿里云持久卷，再启动新容器。目录中不仅有 `state.json`，还可能包含
+自动生成的 `.service-token`、OAuth 状态、Bridge 队列、窗口交接和迁移后的状态字段；
+不要只复制单个 JSON，也不要把这些文件提交进 Git。
+
+阿里云容器继续使用仓库根目录的 `Dockerfile`，持久卷挂载到 `/app/state`。至少需要
+把旧平台上的全部环境变量原样迁移，并将公网地址相关变量改为：
+
+```env
+OAUTH_PUBLIC_BASE_URL=https://xinchao.xunzhou.space
+DASHBOARD_PUBLIC_BASE_URL=https://xinchao.xunzhou.space
+OMBRE_MCP_URL=https://ombre.xunzhou.space/<现有完整MCP路径>
+```
+
+`OMBRE_MCP_URL` 必须填写新 OB 实际配置的完整 MCP 路径；尖括号只是占位符，
+不能原样填写。如果路径带私密令牌，不要用猜测值覆盖。`SERVICE_TOKEN`、`MCP_PATH_TOKEN`、
+`OAUTH_APPROVAL_TOKEN`、`DASHBOARD_ACCESS_TOKEN`、`BRIDGE_MACHINE_TOKEN`、
+`OMBRE_MCP_TOKEN` 和模型密钥都应保留原值并继续彼此独立。
+
+新实例依次验证 `/health`、Dashboard 登录、OAuth MCP、`xinchao_get_state`、
+`xinchao_get_dreams`、只读 OB 上下文和 IO Bridge。验收前不要删除旧卷，也不要让
+新旧实例同时推进同一份心潮状态。
 
 ## 1. 从 GitHub 直接部署到 Zeabur
 
